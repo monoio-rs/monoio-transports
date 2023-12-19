@@ -1,15 +1,49 @@
-[workspace]
-members = ["monoio-http", "monoio-http-client"]
-resolver = "2"
+[package]
+authors = ["ChiHai <ihciah@gmail.com>", "Rain <rain-jiang@outlook.com>"]
+description = "Monoio Transporter."
+edition = "2021"
+license = "MIT/Apache-2.0"
+name = "monoio-transports"
+version = "0.3.0"
 
-[workspace.dependencies]
+[dependencies]
 monoio = "0.2.0"
 monoio-compat = "0.2.0"
 service-async = "0.2.0"
 monoio-rustls = "0.3.0"
-monoio-native-tls = "0.3.0"
-monoio-codec = "0.3.0"
+monoio-http = "0.3.1"
+monoio-codec = { path = "../monoio-codec" }
+monoio-native-tls = { version = "0.3.0", optional = true }
+
 bytes = "1"
 http = "1.0"
 local-sync = "0.1"
 thiserror = "1"
+
+serde = "1"
+serde_json = "1"
+smol_str = "0.2"
+
+rustls = { version = "0.21", default-features = false, features = [
+    "dangerous_configuration",
+] }
+webpki-roots = "0.25.2"
+native-tls = { version = "0.2", optional = true }
+
+tracing = { version = "0.1", optional = true }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[features]
+default = ["time"]
+# Enable this feature to make connection pool periodically checking works.
+# You must enable time driver to use it.
+time = []
+
+# Note: rustls and native-tls cannot be enabled at the same time
+rustls-unsafe-io = ["monoio-rustls/unsafe_io"]
+native-tls = ["dep:native-tls", "monoio-native-tls"]
+logging = ["tracing", "monoio-rustls/logging"]
