@@ -7,7 +7,7 @@ use monoio_transports::{
     pooled::connector::PooledConnector,
 };
 
-const UDS_PATH: &str = "./uds.sock";
+const UDS_PATH: &str = "./examples/uds.sock";
 
 type PoolHttpConnector = HttpConnector<PooledConnector<UnixConnector, String, UnixStream, ()>>;
 

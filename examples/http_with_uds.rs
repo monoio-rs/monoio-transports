@@ -5,7 +5,7 @@ use monoio_transports::{
     http::HttpConnector,
 };
 
-const UDS_PATH: &str = "./uds.sock";
+const UDS_PATH: &str = "./examples/uds.sock";
 
 type HttpOverUdsConnector = HttpConnector<UnixConnector>;
 

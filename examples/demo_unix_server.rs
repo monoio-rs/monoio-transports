@@ -6,7 +6,7 @@ use monoio::{
     net::{UnixListener, UnixStream},
 };
 
-const UDS_PATH: &str = "./uds.sock";
+const UDS_PATH: &str = "./examples/uds.sock";
 const RESP: &[u8;103] = b"HTTP/1.1 200 OK\r\nContent-Length: 17\r\nContent-Type: application/json\r\nServer: hertz\r\n\r\n{\"hello\":\"world\"}";
 
 async fn handle(stream: UnixStream) -> Result<(), std::io::Error> {
