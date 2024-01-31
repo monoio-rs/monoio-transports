@@ -9,7 +9,7 @@ use monoio_transports::{
 };
 
 type PoolHttpsConnector =
-    HttpConnector<PooledConnector<TlsConnector<TcpConnector>, Key, TlsStream<TcpStream>, ()>>;
+    HttpConnector<PooledConnector<TlsConnector<TcpConnector>, Key, TlsStream<TcpStream>>>;
 
 #[monoio::main(enable_timer = true)]
 async fn main() -> Result<(), monoio_transports::Error> {

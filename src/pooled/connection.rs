@@ -15,24 +15,20 @@ use monoio_codec::Framed;
 
 use super::{IdleConnection, WeakConns};
 
-pub struct PooledConnection<K: Hash + Eq + Display, IO: AsyncWriteRent, Codec> {
+pub struct PooledConnection<K: Hash + Eq + Display, IO: AsyncWriteRent> {
     // option is for take when drop
     key: Option<K>,
-    conn: Option<Framed<IO, Codec>>,
-    pool: WeakConns<K, Framed<IO, Codec>>,
+    conn: Option<IO>,
+    pool: WeakConns<K, IO>,
     reusable: bool,
 }
 
-impl<K, IO, Codec> PooledConnection<K, IO, Codec>
+impl<K, IO> PooledConnection<K, IO>
 where
     K: Hash + Eq + Display,
     IO: AsyncWriteRent + AsyncReadRent + Split,
 {
-    pub(crate) fn new(
-        key: K,
-        conn: Framed<IO, Codec>,
-        pool: WeakConns<K, Framed<IO, Codec>>,
-    ) -> Self {
+    pub(crate) fn new(key: K, conn: IO, pool: WeakConns<K, IO>) -> Self {
         Self {
             key: Some(key),
             conn: Some(conn),
@@ -45,17 +41,16 @@ where
         self.reusable = reusable;
     }
 
-    pub fn map_codec(&mut self, f: impl FnOnce(Codec) -> Codec) {
-        let conn = self.conn.take().expect("unable to take connection");
-        let conn = conn.map_codec(f);
-        self.conn = Some(conn);
+    pub fn map_codec<F, C>(self, map: F) -> Framed<PooledConnection<K, IO>, C>
+    where
+        F: FnOnce() -> C,
+    {
+        Framed::new(self, map())
     }
 }
 
-impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> Deref
-    for PooledConnection<K, IO, Codec>
-{
-    type Target = Framed<IO, Codec>;
+impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent> Deref for PooledConnection<K, IO> {
+    type Target = IO;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -63,16 +58,16 @@ impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> Deref
     }
 }
 
-impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> DerefMut
-    for PooledConnection<K, IO, Codec>
+impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent> DerefMut
+    for PooledConnection<K, IO>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.conn.as_mut().unwrap_unchecked() }
     }
 }
 
-impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> AsyncReadRent
-    for PooledConnection<K, IO, Codec>
+impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent> AsyncReadRent
+    for PooledConnection<K, IO>
 {
     async fn read<T: IoBufMut>(&mut self, buf: T) -> BufResult<usize, T> {
         self.deref_mut().read(buf).await
@@ -83,8 +78,8 @@ impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> AsyncRea
     }
 }
 
-impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> AsyncWriteRent
-    for PooledConnection<K, IO, Codec>
+impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent> AsyncWriteRent
+    for PooledConnection<K, IO>
 {
     async fn write<T: IoBuf>(&mut self, buf: T) -> BufResult<usize, T> {
         self.deref_mut().write(buf).await
@@ -103,12 +98,12 @@ impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> AsyncWri
     }
 }
 
-unsafe impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> Split
-    for PooledConnection<K, IO, Codec>
+unsafe impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent> Split
+    for PooledConnection<K, IO>
 {
 }
 
-impl<K: Hash + Eq + Display, IO: AsyncWriteRent, Codec> Drop for PooledConnection<K, IO, Codec> {
+impl<K: Hash + Eq + Display, IO: AsyncWriteRent> Drop for PooledConnection<K, IO> {
     fn drop(&mut self) {
         if let Some(pool) = self.pool.upgrade() {
             let key = self.key.take().expect("unable to take key");
