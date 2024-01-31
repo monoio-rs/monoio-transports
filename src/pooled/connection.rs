@@ -44,6 +44,12 @@ where
     pub fn set_reusable(&mut self, reusable: bool) {
         self.reusable = reusable;
     }
+
+    pub fn map_codec(&mut self, f: impl FnOnce(Codec) -> Codec) {
+        let conn = self.conn.take().expect("unable to take connection");
+        let conn = conn.map_codec(f);
+        self.conn = Some(conn);
+    }
 }
 
 impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent, Codec> Deref
