@@ -1,8 +1,11 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 
 use bytes::{Bytes, BytesMut};
-use monoio::{io::sink::SinkExt, net::TcpStream};
-use monoio_codec::Encoder;
+use monoio::{
+    io::{sink::SinkExt, stream::Stream},
+    net::TcpStream,
+};
+use monoio_codec::{Decoded, Decoder, Encoder};
 use monoio_transports::{
     connectors::{Connector, TcpConnector},
     pooled::connector::PooledConnector,
@@ -27,6 +30,26 @@ impl Encoder<Bytes> for RawEncoder {
         println!("Encoder: {}", self.name);
         dst.extend_from_slice(&item);
         Ok(())
+    }
+}
+
+struct RawDecoder {
+    name: String,
+}
+
+impl RawDecoder {
+    fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+impl Decoder for RawDecoder {
+    type Item = Bytes;
+    type Error = std::io::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Decoded<bytes::Bytes>, std::io::Error> {
+        println!("Decoder: {}", self.name);
+        Ok(Decoded::Some(src.split().freeze()))
     }
 }
 
@@ -56,18 +79,42 @@ impl Encoder<Bytes> for MyCodec {
 #[monoio::main(enable_timer = true)]
 async fn main() -> Result<(), monoio_transports::Error> {
     let connector = PoolTcpConnector::default();
-    let key = ("127.0.0.1", 5000 as u16)
+    let key = ("52.206.0.51", 80 as u16)
         .to_socket_addrs()
         .unwrap()
         .next()
         .unwrap();
 
     let conn = connector.connect(key).await.unwrap();
-    let mut conn = conn.map_codec(|| MyCodec::new(RawEncoder::new("raw".to_string()), false));
+    let (mut decoder, mut encoder) = conn.map_codec(
+        RawDecoder::new("raw_decoder".to_string()),
+        MyCodec::new(RawEncoder::new("raw".to_string()), false),
+    );
+
+    let join_handler = monoio::spawn(async move {
+        monoio::select! {
+            _ = monoio::time::sleep(std::time::Duration::from_secs(5)) => {
+                println!("Complete");
+            }
+            _ = async move {
+                println!("Start to receive data");
+            let mut buf = BytesMut::new();
+                while let Some(Ok(item)) = decoder.next().await {
+                    buf.extend_from_slice(&item);
+                    println!("Received: {:?}", buf);
+                }
+            } => {
+                println!("Complete");
+            }
+        };
+    });
+
     let data = "GET /get HTTP/1.1\r\nHost: httpbin.org\r\n\r\n";
-    let _ = conn
+    let _ = encoder
         .send_and_flush(Bytes::from_static(data.as_bytes()))
         .await;
+
+    join_handler.await;
 
     Ok(())
 }

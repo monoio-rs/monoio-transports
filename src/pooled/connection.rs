@@ -8,10 +8,10 @@ use std::{
 
 use monoio::{
     buf::{IoBuf, IoBufMut, IoVecBuf, IoVecBufMut},
-    io::{AsyncReadRent, AsyncWriteRent, Split},
+    io::{AsyncReadRent, AsyncWriteRent, OwnedReadHalf, OwnedWriteHalf, Split, Splitable},
     BufResult,
 };
-use monoio_codec::Framed;
+use monoio_codec::{FramedRead, FramedWrite};
 
 use super::{IdleConnection, WeakConns};
 
@@ -41,11 +41,19 @@ where
         self.reusable = reusable;
     }
 
-    pub fn map_codec<F, C>(self, map: F) -> Framed<PooledConnection<K, IO>, C>
-    where
-        F: FnOnce() -> C,
-    {
-        Framed::new(self, map())
+    pub fn map_codec<Decoder, Encoder>(
+        self,
+        decoder: Decoder,
+        encoder: Encoder,
+    ) -> (
+        FramedRead<OwnedReadHalf<PooledConnection<K, IO>>, Decoder>,
+        FramedWrite<OwnedWriteHalf<PooledConnection<K, IO>>, Encoder>,
+    ) {
+        let (read, write) = self.into_split();
+        (
+            FramedRead::new(read, decoder),
+            FramedWrite::new(write, encoder),
+        )
     }
 }
 
