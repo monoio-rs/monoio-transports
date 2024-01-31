@@ -1,4 +1,7 @@
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::{
+    net::{SocketAddr, ToSocketAddrs},
+    time::Duration,
+};
 
 use bytes::{Bytes, BytesMut};
 use monoio::{
@@ -92,21 +95,15 @@ async fn main() -> Result<(), monoio_transports::Error> {
     );
 
     let join_handler = monoio::spawn(async move {
-        monoio::select! {
-            _ = monoio::time::sleep(std::time::Duration::from_secs(5)) => {
-                println!("Complete");
-            }
-            _ = async move {
-                println!("Start to receive data");
-            let mut buf = BytesMut::new();
-                while let Some(Ok(item)) = decoder.next().await {
-                    buf.extend_from_slice(&item);
-                    println!("Received: {:?}", buf);
-                }
-            } => {
-                println!("Complete");
-            }
-        };
+        println!("Start to receive data");
+        let mut buf = BytesMut::new();
+        while let Ok(Some(Ok(item))) =
+            monoio::time::timeout(Duration::from_secs(2), decoder.next()).await
+        {
+            buf.extend_from_slice(&item);
+            println!("Received: {:?}", buf);
+        }
+        drop(decoder);
     });
 
     let data = "GET /get HTTP/1.1\r\nHost: httpbin.org\r\n\r\n";
@@ -114,7 +111,11 @@ async fn main() -> Result<(), monoio_transports::Error> {
         .send_and_flush(Bytes::from_static(data.as_bytes()))
         .await;
 
+    drop(encoder);
+
     join_handler.await;
+    std::thread::sleep(Duration::from_secs(3));
+    let _ = connector.connect(key).await.unwrap();
 
     Ok(())
 }
