@@ -1,6 +1,6 @@
 mod tcp_connector;
 mod tls_connector;
-// pub mod unified_connector;
+pub mod unified_connector;
 mod unix_connector;
 
 use std::future::Future;
