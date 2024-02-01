@@ -104,7 +104,7 @@ mod tests {
 
     #[monoio::test(enable_timer = true)]
     async fn test_pooled_http_connector() -> Result<(), crate::Error> {
-        let pooled_connector: PooledConnector<TcpConnector, Key, TcpStream, ()> =
+        let pooled_connector: PooledConnector<TcpConnector, Key, TcpStream> =
             PooledConnector::with_connector(TcpConnector::default());
         let connector = HttpConnector {
             inner_connector: pooled_connector,
@@ -147,7 +147,6 @@ mod tests {
             TlsConnector<TcpConnector>,
             Key,
             TlsStream<TcpStream>,
-            (),
         > = PooledConnector::with_connector(TlsConnector::with_connector(TcpConnector::default()));
         let connector = HttpConnector {
             inner_connector: pooled_connector,

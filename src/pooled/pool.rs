@@ -17,11 +17,11 @@ use super::{connection::PooledConnection, Conns, WeakConns};
 const DEFAULT_IDLE_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug)]
-pub struct ConnectionPool<K, IO: AsyncWriteRent, Codec> {
-    conns: Conns<K, Framed<IO, Codec>>,
+pub struct ConnectionPool<K, IO: AsyncWriteRent> {
+    conns: Conns<K, Framed<IO, ()>>,
 }
 
-impl<K, IO: AsyncWriteRent, Codec> Clone for ConnectionPool<K, IO, Codec> {
+impl<K, IO: AsyncWriteRent> Clone for ConnectionPool<K, IO> {
     fn clone(&self) -> Self {
         Self {
             conns: self.conns.clone(),
@@ -29,7 +29,7 @@ impl<K, IO: AsyncWriteRent, Codec> Clone for ConnectionPool<K, IO, Codec> {
     }
 }
 
-impl<K: 'static, IO: AsyncWriteRent + 'static, Codec: 'static> ConnectionPool<K, IO, Codec> {
+impl<K: 'static, IO: AsyncWriteRent + 'static> ConnectionPool<K, IO> {
     #[cfg(feature = "time")]
     fn new(idle_interval: Option<Duration>, max_idle: Option<usize>) -> Self {
         use super::SharedInner;
@@ -54,9 +54,7 @@ impl<K: 'static, IO: AsyncWriteRent + 'static, Codec: 'static> ConnectionPool<K,
     }
 }
 
-impl<K: 'static, IO: AsyncWriteRent + 'static, Codec: 'static> Default
-    for ConnectionPool<K, IO, Codec>
-{
+impl<K: 'static, IO: AsyncWriteRent + 'static> Default for ConnectionPool<K, IO> {
     #[cfg(feature = "time")]
     fn default() -> Self {
         Self::new(None, None)
@@ -68,12 +66,12 @@ impl<K: 'static, IO: AsyncWriteRent + 'static, Codec: 'static> Default
     }
 }
 
-impl<K, IO, Codec> ConnectionPool<K, IO, Codec>
+impl<K, IO> ConnectionPool<K, IO>
 where
     K: Hash + Eq + ToOwned<Owned = K> + Display,
     IO: AsyncWriteRent + AsyncReadRent + Split,
 {
-    pub fn get(&self, key: &K) -> Option<PooledConnection<K, IO, Codec>> {
+    pub fn get(&self, key: &K) -> Option<PooledConnection<K, IO>> {
         let conns = unsafe { &mut *self.conns.get() };
 
         match conns.mapping.get_mut(key) {
@@ -97,7 +95,7 @@ where
         }
     }
 
-    pub fn link(&self, key: K, conn: Framed<IO, Codec>) -> PooledConnection<K, IO, Codec> {
+    pub fn link(&self, key: K, conn: Framed<IO, ()>) -> PooledConnection<K, IO> {
         #[cfg(feature = "logging")]
         tracing::debug!("linked new connection to the pool");
 
