@@ -1,3 +1,4 @@
+use std::time::Duration;
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 use monoio_http::h1::codec::ClientCodec;
 
@@ -7,17 +8,18 @@ use crate::connectors::Connector;
 #[derive(Clone)]
 pub struct HttpConnector<C> {
     inner_connector: C,
+    pub timeout: Duration,
 }
 
 impl<C> HttpConnector<C> {
-    pub fn new(inner_connector: C) -> Self {
-        Self { inner_connector }
+    pub fn new(inner_connector: C, timeout: Duration) -> Self {
+        Self { inner_connector, timeout }
     }
 }
 
 impl<C: Default> Default for HttpConnector<C> {
     fn default() -> Self {
-        HttpConnector::new(C::default())
+        HttpConnector::new(C::default(), Duration::from_secs(60))
     }
 }
 
@@ -36,7 +38,7 @@ where
             .connect(key)
             .await
             .map_err(|e| e.into())?;
-        Ok(HttpConnection::H1(ClientCodec::new(io)))
+        Ok(HttpConnection::H1(ClientCodec::new(io, self.timeout)))
     }
 }
 
