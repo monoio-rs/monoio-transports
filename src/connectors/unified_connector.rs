@@ -1,4 +1,6 @@
 use std::{
+    fmt::Display,
+    hash::Hash,
     io,
     net::ToSocketAddrs,
     path::{Path, PathBuf},
@@ -22,12 +24,30 @@ use super::{
 use crate::key::Key;
 
 // TODO: make its PathBuf and SmolStr to ref
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UnifiedTransportAddr {
     Tcp(SmolStr, u16),
     Unix(PathBuf),
     TcpTls(SmolStr, u16, crate::key::ServerName),
     UnixTls(PathBuf, crate::key::ServerName),
+}
+
+impl Display for UnifiedTransportAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnifiedTransportAddr::Tcp(addr, port) => write!(f, "{}:{}", addr, port),
+            UnifiedTransportAddr::Unix(path) => write!(f, "{:?}", path),
+            UnifiedTransportAddr::TcpTls(addr, port, sn) => write!(f, "{}:{}:{:?}", addr, port, sn),
+            UnifiedTransportAddr::UnixTls(path, sn) => write!(f, "{:?}:{:?}", path, sn),
+        }
+    }
+}
+
+impl Hash for UnifiedTransportAddr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let key = format!("{}", self);
+        key.hash(state);
+    }
 }
 
 impl Param<UnifiedTransportAddr> for Key {
