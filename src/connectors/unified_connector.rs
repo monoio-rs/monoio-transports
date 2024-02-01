@@ -48,9 +48,9 @@ impl<'a> ToSocketAddrs for TcpTlsAddr<'a> {
         (self.0.as_str(), self.1).to_socket_addrs()
     }
 }
-impl<'a> service_async::Param<crate::key::ServerName> for TcpTlsAddr<'a> {
-    fn param(&self) -> crate::key::ServerName {
-        self.2.clone()
+impl<'a> service_async::Param<Option<crate::key::ServerName>> for TcpTlsAddr<'a> {
+    fn param(&self) -> Option<crate::key::ServerName> {
+        Some(self.2.clone())
     }
 }
 impl<'a> AsRef<Path> for UnixTlsAddr<'a> {
@@ -58,9 +58,9 @@ impl<'a> AsRef<Path> for UnixTlsAddr<'a> {
         self.0
     }
 }
-impl<'a> service_async::Param<crate::key::ServerName> for UnixTlsAddr<'a> {
-    fn param(&self) -> crate::key::ServerName {
-        self.1.clone()
+impl<'a> service_async::Param<Option<crate::key::ServerName>> for UnixTlsAddr<'a> {
+    fn param(&self) -> Option<crate::key::ServerName> {
+        Some(self.1.clone())
     }
 }
 
