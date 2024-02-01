@@ -9,7 +9,7 @@ use monoio_transports::{
 
 const UDS_PATH: &str = "./examples/uds.sock";
 
-type PoolHttpConnector = HttpConnector<PooledConnector<UnixConnector, String, UnixStream, ()>>;
+type PoolHttpConnector = HttpConnector<PooledConnector<UnixConnector, String, UnixStream>>;
 
 #[monoio::main(enable_timer = true)]
 async fn main() -> Result<(), monoio_transports::Error> {
