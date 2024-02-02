@@ -49,10 +49,6 @@ where
         let conn = conn.map_codec(|_| codec);
         PooledConnectionWithCodec::new(self, conn)
     }
-
-    pub fn re_link<NewCodec>(&mut self, conn: Framed<IO, NewCodec>) {
-        self.conn = Some(conn.map_codec(|_| ()));
-    }
 }
 
 impl<K: Hash + Eq + Display, IO: AsyncWriteRent + AsyncReadRent> Deref for PooledConnection<K, IO> {

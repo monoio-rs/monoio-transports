@@ -110,7 +110,6 @@ async fn main() -> Result<(), monoio_transports::Error> {
         }
     }
 
-    std::thread::sleep(Duration::from_secs(3));
     {
         let _ = connector.connect(key).await.unwrap();
     }
