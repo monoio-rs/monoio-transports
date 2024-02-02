@@ -1,10 +1,11 @@
 use bytes::Bytes;
-use http::{Request, Response};
+use http::Response;
 use monoio::io::{sink::SinkExt, stream::Stream, AsyncReadRent, AsyncWriteRent};
 use monoio_http::{
     common::{
         body::{Body, HttpBody},
         error::HttpError,
+        request::RequestForEncoder,
     },
     h1::{
         codec::{
@@ -20,9 +21,9 @@ pub enum HttpConnection<IO: AsyncWriteRent> {
 }
 
 impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
-    pub async fn send_request<B>(
-        &mut self,
-        request: Request<B>,
+    pub async fn send_request<'a, B>(
+        &'a mut self,
+        request: RequestForEncoder<'a, B>,
     ) -> (crate::Result<Response<HttpBody>>, bool)
     where
         B: Body<Data = Bytes, Error = HttpError> + 'static,
