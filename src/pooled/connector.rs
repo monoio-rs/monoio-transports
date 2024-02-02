@@ -1,4 +1,4 @@
-use std::{fmt::Display, hash::Hash, net::ToSocketAddrs};
+use std::{fmt::Display, hash::Hash};
 
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 use monoio_codec::Framed;
@@ -77,7 +77,7 @@ impl<TC, K: 'static, IO: AsyncWriteRent + 'static, Codec: 'static>
 
 impl<TC, K, IO, Codec> Connector<K> for PooledConnector<TC, K, IO, Codec>
 where
-    K: ToSocketAddrs + Hash + Eq + ToOwned<Owned = K> + Display + 'static,
+    K: Hash + Eq + ToOwned<Owned = K> + Display + 'static,
     TC: Connector<K, Connection = IO>,
     IO: AsyncReadRent + AsyncWriteRent + Split + Unpin + 'static,
     crate::Error: From<<TC as Connector<K>>::Error>,
