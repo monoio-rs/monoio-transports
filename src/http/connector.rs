@@ -38,7 +38,10 @@ where
             .connect(key)
             .await
             .map_err(|e| e.into())?;
-        Ok(HttpConnection::H1(ClientCodec::new(io, self.timeout)))
+        match self.timeout {
+            Some(timeout) => Ok(HttpConnection::H1(ClientCodec::new_with_timeout(io, timeout))),
+            None => Ok(HttpConnection::H1(ClientCodec::new(io))),
+        }
     }
 }
 
