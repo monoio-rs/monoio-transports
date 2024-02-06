@@ -8,18 +8,22 @@ use crate::connectors::Connector;
 #[derive(Clone)]
 pub struct HttpConnector<C> {
     inner_connector: C,
-    pub timeout: Option<Duration>,
+    timeout: Option<Duration>,
 }
 
 impl<C> HttpConnector<C> {
-    pub fn new(inner_connector: C, timeout: Option<Duration>) -> Self {
+    pub fn new(inner_connector: C) -> Self {
+        Self { inner_connector, timeout: None }
+    }
+
+    pub fn new_with_timeout(inner_connector: C, timeout: Option<Duration>) -> Self {
         Self { inner_connector, timeout }
     }
 }
 
 impl<C: Default> Default for HttpConnector<C> {
     fn default() -> Self {
-        HttpConnector::new(C::default(), None)
+        HttpConnector::new(C::default())
     }
 }
 
