@@ -1,7 +1,6 @@
 mod error;
-pub use error::{Error, Result};
+pub use error::*;
 
 pub mod connectors;
 pub mod http;
-pub mod key;
-pub mod pooled;
+pub mod pool;

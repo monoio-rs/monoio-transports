@@ -3,7 +3,7 @@ use thiserror::Error as ThisError;
 #[derive(ThisError, Debug)]
 pub enum Error {
     #[error("convert from uri error {0}")]
-    FromUri(#[from] crate::key::FromUriError),
+    FromUri(#[from] FromUriError),
     #[error("http header error")]
     Http(#[from] http::Error),
     #[error("decode error {0}")]
@@ -35,3 +35,17 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(ThisError, Debug)]
+pub enum FromUriError {
+    #[error("Invalid dns name {0}")]
+    InvalidDnsName(#[from] rustls::client::InvalidDnsNameError),
+    #[error("Scheme not supported")]
+    UnsupportScheme,
+    #[error("Missing authority in uri")]
+    NoAuthority,
+    #[error("resolve error {0}")]
+    Resolve(#[from] std::io::Error),
+    #[error("no resolve result")]
+    NoResolve,
+}

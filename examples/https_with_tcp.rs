@@ -1,19 +1,16 @@
 use http::{request, Uri};
 use monoio_http::{common::body::HttpBody, h1::payload::Payload};
 use monoio_transports::{
-    connectors::{Connector, TcpConnector, TlsConnector},
-    http::HttpConnector,
-    key::Key,
+    connectors::{Connector, TcpConnector, TcpTlsAddr, TlsConnector},
+    http::H1Connector,
 };
-
-type HttpsOverTcpConnector = HttpConnector<TlsConnector<TcpConnector>>;
 
 #[monoio::main]
 async fn main() -> Result<(), monoio_transports::Error> {
-    let connector: HttpsOverTcpConnector = HttpConnector::default();
+    let connector: H1Connector<TlsConnector<TcpConnector>, _, _> = H1Connector::default();
     let uri = "https://httpbin.org/get".parse::<Uri>().unwrap();
-    let key: Key = uri.try_into().unwrap();
-    let mut conn = connector.connect(key).await.unwrap();
+    let unified_addr = TcpTlsAddr::try_from(&uri).unwrap();
+    let mut conn = connector.connect(unified_addr).await.unwrap();
     let req = request::Builder::new()
         .uri("/get")
         .header("Host", "httpbin.org")

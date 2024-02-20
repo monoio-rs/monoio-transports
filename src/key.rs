@@ -6,7 +6,7 @@ use smol_str::SmolStr;
 use thiserror::Error as ThisError;
 
 #[cfg(feature = "native-tls")]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ServerName(pub SmolStr);
 #[cfg(not(feature = "native-tls"))]
 pub use rustls::ServerName;
