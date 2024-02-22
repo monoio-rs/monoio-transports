@@ -15,8 +15,19 @@ use monoio_http::{
     },
 };
 
+use crate::pool::Poolable;
+
 pub enum HttpConnection<IO: AsyncWriteRent> {
-    H1(ClientCodec<IO>),
+    H1(ClientCodec<IO>, bool),
+}
+
+impl<IO: AsyncWriteRent> Poolable for HttpConnection<IO> {
+    #[inline]
+    fn is_open(&self) -> bool {
+        match self {
+            Self::H1(_, open) => *open,
+        }
+    }
 }
 
 impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
@@ -28,10 +39,11 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
         B: Body<Data = Bytes, Error = HttpError> + 'static,
     {
         match self {
-            Self::H1(handle) => {
+            Self::H1(handle, open) => {
                 if let Err(e) = handle.send_and_flush(request).await {
                     #[cfg(feature = "logging")]
                     tracing::error!("send upstream request error {:?}", e);
+                    *open = false;
                     return (Err(e.into()), false);
                 }
 
@@ -66,6 +78,7 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
                                                 "decode upstream response error {:?}",
                                                 e
                                             );
+                                            *open = false;
                                             return (Err(e.into()), false);
                                         }
                                         None => {
@@ -83,11 +96,13 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
                     Some(Err(e)) => {
                         #[cfg(feature = "logging")]
                         tracing::error!("decode upstream response error {:?}", e);
+                        *open = false;
                         (Err(e.into()), false)
                     }
                     None => {
                         #[cfg(feature = "logging")]
                         tracing::error!("upstream return eof");
+                        *open = false;
                         (Err(DecodeError::UnexpectedEof.into()), false)
                     }
                 }
