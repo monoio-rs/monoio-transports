@@ -3,11 +3,9 @@ use std::{
     cell::UnsafeCell,
     collections::{HashMap, VecDeque},
     fmt::Debug,
-    future::Future,
     hash::Hash,
     ops::{Deref, DerefMut},
     rc::{Rc, Weak},
-    task::ready,
     time::{Duration, Instant},
 };
 
@@ -109,6 +107,9 @@ impl<T: Poolable, K: Key> Drop for Pooled<K, T> {
                         .entry(key)
                         .or_insert(VecDeque::with_capacity(pool.max_idle));
                     if queue.len() > pool.max_idle {
+                        for _ in 0..queue.len() - pool.max_idle {
+                            let _ = queue.pop_front();
+                        }
                         let _ = queue.pop_front();
                     }
 
@@ -134,6 +135,7 @@ impl<IO> Idle<IO> {
         }
     }
 
+    #[allow(unused)]
     #[inline]
     pub(crate) fn expired(&self, max_elapsed: Duration) -> bool {
         self.idle_at.elapsed() > max_elapsed
@@ -178,6 +180,7 @@ impl<K, IO> PoolInner<K, IO> {
         }
     }
 
+    #[allow(unused)]
     fn clear_expired(&mut self, dur: Duration) {
         self.idle_conns.retain(|_, values| {
             values.retain(|entry| !entry.expired(dur));
@@ -262,6 +265,24 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
         }
     }
 
+    #[inline]
+    pub fn put(&self, key: K, conn: T) {
+        let inner = unsafe { &mut *self.shared.get() };
+        let queue = inner
+            .idle_conns
+            .entry(key)
+            .or_insert(VecDeque::with_capacity(inner.max_idle));
+        if queue.len() > inner.max_idle {
+            for _ in 0..queue.len() - inner.max_idle {
+                let _ = queue.pop_front();
+            }
+            let _ = queue.pop_front();
+        }
+
+        let idle = Idle::new(conn);
+        queue.push_back(idle);
+    }
+
     /// Get a reference to the element and apply f.
     /// Mostly use by h2.
     #[inline]
@@ -294,7 +315,7 @@ struct IdleTask<K, T> {
 }
 
 #[cfg(feature = "time")]
-impl<K, T> Future for IdleTask<K, T> {
+impl<K, T> std::future::Future for IdleTask<K, T> {
     type Output = ();
 
     fn poll(
@@ -312,7 +333,7 @@ impl<K, T> Future for IdleTask<K, T> {
                 std::task::Poll::Pending => (),
             }
 
-            ready!(this.interval.poll_tick(cx));
+            std::task::ready!(this.interval.poll_tick(cx));
             if let Some(inner) = this.conns.upgrade() {
                 let inner_mut = unsafe { &mut *inner.get() };
                 inner_mut.clear_expired(this.idle_dur);

@@ -114,4 +114,3 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
         }
     }
 }
-

@@ -1,4 +1,6 @@
 mod l4_connector;
+#[cfg(feature = "hyper")]
+pub mod pollio;
 mod tls_connector;
 
 use std::{future::Future, time::Duration};
