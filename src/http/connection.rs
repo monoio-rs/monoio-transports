@@ -1,11 +1,13 @@
-use bytes::Bytes;
 use http::Response;
-use monoio::io::{sink::SinkExt, stream::Stream, AsyncReadRent, AsyncWriteRent};
+use monoio::io::{
+    sink::{Sink, SinkExt},
+    stream::Stream,
+    AsyncReadRent, AsyncWriteRent,
+};
 use monoio_http::{
     common::{
         body::{Body, HttpBody},
         error::HttpError,
-        request::RequestForEncoder,
     },
     h1::{
         codec::{
@@ -32,12 +34,13 @@ impl<IO: AsyncWriteRent> Poolable for HttpConnection<IO> {
 }
 
 impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
-    pub async fn send_request<'a, B>(
-        &'a mut self,
-        request: RequestForEncoder<'a, B>,
-    ) -> (crate::Result<Response<HttpBody>>, bool)
+    pub async fn send_request<R, E>(
+        &mut self,
+        request: R,
+    ) -> (Result<Response<HttpBody>, HttpError>, bool)
     where
-        B: Body<Data = Bytes, Error = HttpError> + 'static,
+        ClientCodec<IO>: Sink<R, Error = E>,
+        E: std::fmt::Debug + Into<HttpError>,
     {
         match self {
             Self::H1(handle, open) => {
@@ -80,7 +83,7 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
                                                 e
                                             );
                                             *open = false;
-                                            return (Err(e.into()), false);
+                                            return (Err(e), false);
                                         }
                                         None => {
                                             payload_sender.feed_data(None);
@@ -98,7 +101,7 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
                         #[cfg(feature = "logging")]
                         tracing::error!("decode upstream response error {:?}", e);
                         *open = false;
-                        (Err(e.into()), false)
+                        (Err(e), false)
                     }
                     None => {
                         #[cfg(feature = "logging")]
@@ -111,3 +114,4 @@ impl<IO: AsyncReadRent + AsyncWriteRent> HttpConnection<IO> {
         }
     }
 }
+
