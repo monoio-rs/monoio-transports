@@ -14,11 +14,20 @@ use crate::{
 // In the future, it is expected to implement h2 connector(which mainly based on
 // ConnectionPool::map_ref) and unify the two connectors(not like hyper-util which merges at pool
 // level).
-#[derive(Clone)]
 pub struct H1Connector<C, K, IO: AsyncWriteRent> {
     inner_connector: C,
     pool: Option<ConnectionPool<K, HttpConnection<IO>>>,
     pub read_timeout: Option<Duration>,
+}
+
+impl<C: Clone, K, IO: AsyncWriteRent> Clone for H1Connector<C, K, IO> {
+    fn clone(&self) -> Self {
+        Self {
+            inner_connector: self.inner_connector.clone(),
+            pool: self.pool.clone(),
+            read_timeout: self.read_timeout,
+        }
+    }
 }
 
 impl<C, K, IO: AsyncWriteRent> H1Connector<C, K, IO> {

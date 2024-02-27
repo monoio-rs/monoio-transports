@@ -46,7 +46,7 @@ impl<P: AsRef<Path>> Connector<P> for UnixConnector {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct UnifiedL4Connector {
     tcp: TcpConnector,
     unix: UnixConnector,
