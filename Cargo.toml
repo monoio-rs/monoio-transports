@@ -7,8 +7,8 @@ name = "monoio-transports"
 version = "0.3.4"
 
 [dependencies]
-monoio = "0.2.0"
-monoio-compat = "0.2.0"
+monoio = "0.2.2"
+monoio-compat = "0.2.1"
 service-async = "0.2.0"
 monoio-rustls = "0.3.0"
 monoio-http = "0.3.2"
@@ -32,8 +32,21 @@ native-tls = { version = "0.2", optional = true }
 
 tracing = { version = "0.1", optional = true }
 
+hyper = { version = "1.1", features = [
+    "http1",
+    "client",
+    "http2",
+], optional = true }
+pin-project-lite = { version = "0.2", optional = true }
+# TODO: impl async mutex in local-sync and replace here.
+tokio = { version = "1", default-features = false, features = [
+    "sync",
+], optional = true }
+
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
+http-body-util = "0.1"
+h2 = "0.4"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
@@ -42,6 +55,14 @@ default = ["time"]
 # Enable this feature to make connection pool periodically checking works.
 # You must enable time driver to use it.
 time = []
+
+hyper = [
+    "dep:hyper",
+    "dep:pin-project-lite",
+    "dep:tokio",
+    "monoio/poll-io",
+    "monoio-compat/hyper",
+]
 
 # Note: rustls and native-tls cannot be enabled at the same time
 rustls-unsafe-io = ["monoio-rustls/unsafe_io"]
