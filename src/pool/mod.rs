@@ -1,4 +1,5 @@
 mod connector;
+mod reuse;
 use std::{
     cell::UnsafeCell,
     collections::{HashMap, VecDeque},
@@ -10,6 +11,7 @@ use std::{
 };
 
 pub use connector::PooledConnector;
+pub use reuse::{Reuse, ReuseConnector};
 
 pub(crate) const DEFAULT_KEEPALIVE_CONNS: usize = 256;
 pub(crate) const DEFAULT_POOL_SIZE: usize = 32;
