@@ -11,6 +11,7 @@ use std::{
 };
 
 pub use connector::PooledConnector;
+use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 pub use reuse::{Reuse, ReuseConnector};
 
 pub(crate) const DEFAULT_KEEPALIVE_CONNS: usize = 256;
@@ -36,6 +37,54 @@ pub struct Pooled<K: Key, T: Poolable> {
     is_reused: bool,
     key: Option<K>,
     pool: Option<WeakPool<K, T>>,
+}
+
+unsafe impl<K: Key, T: Poolable + Split> Split for Pooled<K, T> {}
+
+impl<K: Key, I: Poolable + AsyncReadRent> AsyncReadRent for Pooled<K, I> {
+    #[inline]
+    fn read<T: monoio::buf::IoBufMut>(
+        &mut self,
+        buf: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        unsafe { self.value.as_mut().unwrap_unchecked() }.read(buf)
+    }
+
+    #[inline]
+    fn readv<T: monoio::buf::IoVecBufMut>(
+        &mut self,
+        buf: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        unsafe { self.value.as_mut().unwrap_unchecked() }.readv(buf)
+    }
+}
+
+impl<K: Key, I: Poolable + AsyncWriteRent> AsyncWriteRent for Pooled<K, I> {
+    #[inline]
+    fn write<T: monoio::buf::IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        unsafe { self.value.as_mut().unwrap_unchecked() }.write(buf)
+    }
+
+    #[inline]
+    fn writev<T: monoio::buf::IoVecBuf>(
+        &mut self,
+        buf_vec: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        unsafe { self.value.as_mut().unwrap_unchecked() }.writev(buf_vec)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> impl std::future::Future<Output = std::io::Result<()>> {
+        unsafe { self.value.as_mut().unwrap_unchecked() }.flush()
+    }
+
+    #[inline]
+    fn shutdown(&mut self) -> impl std::future::Future<Output = std::io::Result<()>> {
+        unsafe { self.value.as_mut().unwrap_unchecked() }.shutdown()
+    }
 }
 
 impl<T: Poolable, K: Key> Pooled<K, T> {

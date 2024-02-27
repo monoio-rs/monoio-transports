@@ -1,5 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
+use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
+
 use super::Poolable;
 use crate::connectors::Connector;
 
@@ -7,6 +9,54 @@ use crate::connectors::Connector;
 pub struct Reuse<T> {
     inner: T,
     reuse: bool,
+}
+
+unsafe impl<T: Split> Split for Reuse<T> {}
+
+impl<I: AsyncReadRent> AsyncReadRent for Reuse<I> {
+    #[inline]
+    fn read<T: monoio::buf::IoBufMut>(
+        &mut self,
+        buf: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        self.inner.read(buf)
+    }
+
+    #[inline]
+    fn readv<T: monoio::buf::IoVecBufMut>(
+        &mut self,
+        buf: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        self.inner.readv(buf)
+    }
+}
+
+impl<I: AsyncWriteRent> AsyncWriteRent for Reuse<I> {
+    #[inline]
+    fn write<T: monoio::buf::IoBuf>(
+        &mut self,
+        buf: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        self.inner.write(buf)
+    }
+
+    #[inline]
+    fn writev<T: monoio::buf::IoVecBuf>(
+        &mut self,
+        buf_vec: T,
+    ) -> impl std::future::Future<Output = monoio::BufResult<usize, T>> {
+        self.inner.writev(buf_vec)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> impl std::future::Future<Output = std::io::Result<()>> {
+        self.inner.flush()
+    }
+
+    #[inline]
+    fn shutdown(&mut self) -> impl std::future::Future<Output = std::io::Result<()>> {
+        self.inner.shutdown()
+    }
 }
 
 impl<T> Reuse<T> {
@@ -68,6 +118,7 @@ impl<T> AsMut<T> for Reuse<T> {
     }
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ReuseConnector<C>(pub C);
 
 impl<C, K> Connector<K> for ReuseConnector<C>
