@@ -1,3 +1,4 @@
+mod body;
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
@@ -5,6 +6,7 @@ use std::{
     rc::Rc,
 };
 
+pub use body::{HyperBody, MonoioBody};
 use hyper::{
     body::Body,
     client::conn,
@@ -247,20 +249,32 @@ mod tests {
         use http_body_util::{BodyExt, Empty};
         let connector: HyperH1Connector<_, _, Empty<Bytes>> =
             HyperH1Connector::new(PollIo(TcpConnector::default()));
-        let mut pooled_conn = connector.connect(key).await.unwrap();
+        let mut pooled_conn = connector.connect(key.clone()).await.unwrap();
         let req = http::Request::builder()
             .header(hyper::header::HOST, host.to_string())
-            .uri(uri)
+            .uri(&uri)
             .body(Empty::<Bytes>::new())
             .unwrap();
         let mut resp = pooled_conn.send_request(req).await.unwrap();
-        println!("H1 Response status: {}", resp.status());
+        println!("H1 Response status: {}\nRead with hyper body interface", resp.status());
         while let Some(next) = resp.frame().await {
             let frame = next.unwrap();
             if let Some(chunk) = frame.data_ref() {
                 std::io::stdout().write_all(chunk).unwrap();
             }
         }
+
+        let mut pooled_conn = connector.connect(key).await.unwrap();
+        let req = http::Request::builder()
+            .header(hyper::header::HOST, host.to_string())
+            .uri(uri)
+            .body(Empty::<Bytes>::new())
+            .unwrap();
+        let resp = pooled_conn.send_request(req).await.unwrap();
+        println!("H1 Response status: {}\nRead with monoio-http body interface", resp.status());
+        let body = MonoioBody::new(resp.into_body());
+        let bytes = monoio_http::common::body::BodyExt::bytes(body).await.unwrap();
+        std::io::stdout().write_all(&bytes).unwrap();
     }
 
     #[monoio::test(timer = true)]
