@@ -1,4 +1,5 @@
 mod connector;
+mod map;
 mod reuse;
 use std::{
     cell::UnsafeCell,
@@ -11,6 +12,7 @@ use std::{
 };
 
 pub use connector::PooledConnector;
+pub use map::{ConnectorMap, ConnectorMapper};
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 pub use reuse::{Reuse, ReuseConnector};
 
