@@ -98,7 +98,11 @@ where
             Some(timeout) => ClientCodec::new_with_timeout(io, timeout),
             None => ClientCodec::new(io),
         };
-        let http_conn = HttpConnection::H1(client_codec, true);
+        let http_conn = HttpConnection::H1 {
+            framed: client_codec,
+            open: true,
+            using: false,
+        };
         let pooled = if let Some(pool) = &self.pool {
             pool.link(key, http_conn)
         } else {

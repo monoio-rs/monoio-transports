@@ -256,7 +256,10 @@ mod tests {
             .body(Empty::<Bytes>::new())
             .unwrap();
         let mut resp = pooled_conn.send_request(req).await.unwrap();
-        println!("H1 Response status: {}\nRead with hyper body interface", resp.status());
+        println!(
+            "H1 Response status: {}\nRead with hyper body interface",
+            resp.status()
+        );
         while let Some(next) = resp.frame().await {
             let frame = next.unwrap();
             if let Some(chunk) = frame.data_ref() {
@@ -271,9 +274,14 @@ mod tests {
             .body(Empty::<Bytes>::new())
             .unwrap();
         let resp = pooled_conn.send_request(req).await.unwrap();
-        println!("H1 Response status: {}\nRead with monoio-http body interface", resp.status());
+        println!(
+            "H1 Response status: {}\nRead with monoio-http body interface",
+            resp.status()
+        );
         let body = MonoioBody::new(resp.into_body());
-        let bytes = monoio_http::common::body::BodyExt::bytes(body).await.unwrap();
+        let bytes = monoio_http::common::body::BodyExt::bytes(body)
+            .await
+            .unwrap();
         std::io::stdout().write_all(&bytes).unwrap();
     }
 
