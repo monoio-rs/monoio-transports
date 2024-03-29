@@ -28,6 +28,7 @@ impl<C, E> ConnectorMapper<C, E> for () {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConnectorMap<C, M> {
     pub inner: C,
     pub mapper: M,
