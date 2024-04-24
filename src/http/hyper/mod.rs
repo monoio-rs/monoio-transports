@@ -152,8 +152,10 @@ where
     type Error = HyperError<C::Error>;
 
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
-        if let Some(pooled) = self.pool.get(&key) {
-            return Ok(pooled);
+        while let Some(pooled) = self.pool.get(&key) {
+            if pooled.tx.is_ready() {
+                return Ok(pooled);
+            }
         }
         let underlying = self
             .connector
@@ -181,7 +183,16 @@ where
     type Error = HyperError<C::Error>;
 
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
-        if let Some(pooled) = self.pool.map_ref(&key, |conn| conn.to_owned()) {
+        if let Some(pooled) = self.pool.and_then_mut(&key, |conns| {
+            while let Some(first) = conns.front_mut() {
+                if first.conn.is_ready() {
+                    first.reset_idle();
+                    return Some(first.conn.to_owned());
+                }
+                conns.pop_front();
+            }
+            None
+        }) {
             return Ok(pooled);
         }
         let lock = {
@@ -194,7 +205,16 @@ where
 
         // get lock and try again
         let _guard = lock.lock().await;
-        if let Some(pooled) = self.pool.map_ref(&key, |conn| conn.to_owned()) {
+        if let Some(pooled) = self.pool.and_then_mut(&key, |conns| {
+            while let Some(first) = conns.front_mut() {
+                if first.conn.is_ready() {
+                    first.reset_idle();
+                    return Some(first.conn.to_owned());
+                }
+                conns.pop_front();
+            }
+            None
+        }) {
             return Ok(pooled);
         }
         // create new h2 connection
