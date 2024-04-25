@@ -396,6 +396,7 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
     /// Get a reference to the element and apply f with and_then.
     /// Mostly use by h2.
     #[inline]
+    #[allow(unused)]
     pub(crate) fn and_then_mut<F: FnOnce(&mut VecDeque<Idle<T>>) -> Option<O>, O>(
         &self,
         key: &K,

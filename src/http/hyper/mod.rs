@@ -9,9 +9,10 @@ use std::{
 pub use body::{HyperBody, MonoioBody};
 use hyper::{
     body::Body,
-    client::conn,
+    client::conn::{self, http1::Builder as H1Builder, http2::Builder as H2Builder},
     rt::{Read, Write},
 };
+pub use monoio_compat::hyper::{MonoioExecutor, MonoioTimer};
 use thiserror::Error as ThisError;
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
 pub struct HyperH1Connector<C, K, B> {
     connector: C,
     pool: ConnectionPool<K, HyperH1Connection<B>>,
+    builder: H1Builder,
 }
 
 impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
@@ -30,40 +32,95 @@ impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
         Self {
             connector,
             pool: ConnectionPool::new(None),
+            builder: H1Builder::new(),
         }
     }
 
     #[inline]
-    pub const fn new_with_pool(
-        connector: C,
-        pool: ConnectionPool<K, HyperH1Connection<B>>,
-    ) -> Self {
-        Self { connector, pool }
+    pub fn new_with_pool(connector: C, pool: ConnectionPool<K, HyperH1Connection<B>>) -> Self {
+        Self {
+            connector,
+            pool,
+            builder: H1Builder::new(),
+        }
     }
 }
 
+impl<C, K, B> HyperH1Connector<C, K, B> {
+    #[inline]
+    pub fn with_hyper_builder(mut self, builder: H1Builder) -> Self {
+        self.builder = builder;
+        self
+    }
+
+    #[inline]
+    pub fn hyper_builder(&mut self) -> &mut H1Builder {
+        &mut self.builder
+    }
+}
+
+// TODO: maybe use h2 crate directly?
 pub struct HyperH2Connector<C, K, B> {
     connector: C,
     connecting: UnsafeCell<HashMap<K, Rc<tokio::sync::Mutex<()>>>>,
     pool: ConnectionPool<K, HyperH2Connection<B>>,
+    builder: H2Builder<MonoioExecutor>,
+    max_stream_sender: Option<usize>,
+}
+
+impl<C, K, B> HyperH2Connector<C, K, B> {
+    #[inline]
+    pub fn with_hyper_builder(mut self, mut builder: H2Builder<MonoioExecutor>) -> Self {
+        builder.timer(MonoioTimer);
+        self.builder = builder;
+        self
+    }
+
+    #[inline]
+    pub fn hyper_builder(&mut self) -> &mut H2Builder<MonoioExecutor> {
+        &mut self.builder
+    }
+
+    /// Peers may set max stream per connection, which may cause server side return
+    /// error or client side wait.
+    /// To avoid it, we may open new connection when too many open streams. However,
+    /// there's no way to get the count of current active streams with hyper, nor the
+    /// negotiation of max stream per connection.
+    /// So here we can make a work around by tracking sender counts and assume it's close
+    /// to the real stream count. When it reaches the limit, we open a new connection.
+    /// To make it work, users need to hold sender until the received the response and read its
+    /// body.
+    #[inline]
+    pub fn with_max_stream_sender(mut self, max_stream_sender: Option<usize>) -> Self {
+        self.max_stream_sender = max_stream_sender;
+        self
+    }
 }
 
 impl<C, K: 'static, B: 'static> HyperH2Connector<C, K, B> {
     #[inline]
     pub fn new(connector: C) -> Self {
+        let mut builder = H2Builder::new(MonoioExecutor);
+        builder.timer(MonoioTimer);
         Self {
             connector,
             connecting: UnsafeCell::new(HashMap::new()),
             pool: ConnectionPool::new(None),
+            builder,
+            max_stream_sender: None,
         }
     }
 
     #[inline]
     pub fn new_with_pool(connector: C, pool: ConnectionPool<K, HyperH2Connection<B>>) -> Self {
+        let mut builder = H2Builder::new(MonoioExecutor);
+        builder.timer(MonoioTimer);
         Self {
             connector,
             pool,
             connecting: UnsafeCell::new(HashMap::new()),
+            builder,
+            max_stream_sender: None,
         }
     }
 }
@@ -76,6 +133,7 @@ pub struct HyperH1Connection<B> {
 #[derive(Debug, Clone)]
 pub struct HyperH2Connection<B> {
     tx: conn::http2::SendRequest<B>,
+    cnt: Option<Rc<usize>>,
 }
 
 impl<B> HyperH2Connection<B> {
@@ -83,7 +141,15 @@ impl<B> HyperH2Connection<B> {
     pub fn to_owned(&self) -> Self {
         Self {
             tx: self.tx.clone(),
+            cnt: self.cnt.clone(),
         }
+    }
+
+    fn stream_full(&self) -> bool {
+        let Some(rc) = &self.cnt else {
+            return false;
+        };
+        Rc::strong_count(rc) >= *rc.as_ref()
     }
 }
 
@@ -162,8 +228,7 @@ where
             .connect(key.clone())
             .await
             .map_err(HyperError::Connect)?;
-        // TODO: use builder to allow user specify parameters
-        let (tx, conn) = conn::http1::handshake::<_, B>(underlying).await?;
+        let (tx, conn) = self.builder.handshake::<_, B>(underlying).await?;
         monoio::spawn(conn);
         let pooled = self.pool.link(key, HyperH1Connection { tx });
         Ok(pooled)
@@ -183,18 +248,28 @@ where
     type Error = HyperError<C::Error>;
 
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
-        if let Some(pooled) = self.pool.and_then_mut(&key, |conns| {
-            while let Some(first) = conns.front_mut() {
-                if first.conn.is_ready() {
-                    first.reset_idle();
-                    return Some(first.conn.to_owned());
+        macro_rules! try_get {
+            ($pool:expr, $key:expr) => {
+                if let Some(pooled) = $pool.and_then_mut($key, |conns| {
+                    // remove invalid conn
+                    conns.retain(|idle| idle.conn.is_ready());
+                    // check count
+                    for idle in conns.iter_mut() {
+                        if idle.conn.stream_full() {
+                            continue;
+                        } else {
+                            idle.reset_idle();
+                            return Some(idle.conn.to_owned());
+                        }
+                    }
+                    None
+                }) {
+                    return Ok(pooled);
                 }
-                conns.pop_front();
-            }
-            None
-        }) {
-            return Ok(pooled);
+            };
         }
+
+        try_get!(self.pool, &key);
         let lock = {
             let connecting = unsafe { &mut *self.connecting.get() };
             let lock = connecting
@@ -205,30 +280,20 @@ where
 
         // get lock and try again
         let _guard = lock.lock().await;
-        if let Some(pooled) = self.pool.and_then_mut(&key, |conns| {
-            while let Some(first) = conns.front_mut() {
-                if first.conn.is_ready() {
-                    first.reset_idle();
-                    return Some(first.conn.to_owned());
-                }
-                conns.pop_front();
-            }
-            None
-        }) {
-            return Ok(pooled);
-        }
-        // create new h2 connection
+        try_get!(self.pool, &key);
+
+        // create new h2 connection holding lock
         let underlying = self
             .connector
             .connect(key.clone())
             .await
             .map_err(HyperError::Connect)?;
-        let exec = monoio_compat::hyper::MonoioExecutor;
-        // TODO: use builder to allow user specify parameters
-        let (tx, conn) = conn::http2::handshake::<_, _, B>(exec, underlying).await?;
+        let (tx, conn) = self.builder.handshake::<_, B>(underlying).await?;
         monoio::spawn(conn);
-        self.pool.put(key, HyperH2Connection { tx: tx.clone() });
-        Ok(HyperH2Connection { tx })
+        let cnt = self.max_stream_sender.map(Rc::new);
+        let cn = HyperH2Connection { tx, cnt };
+        self.pool.put(key, cn.to_owned());
+        Ok(cn)
     }
 }
 
