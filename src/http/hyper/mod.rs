@@ -218,8 +218,11 @@ where
     type Error = HyperError<C::Error>;
 
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
-        while let Some(pooled) = self.pool.get(&key) {
-            if pooled.tx.is_ready() {
+        while let Some(mut pooled) = self.pool.get(&key) {
+            if !pooled.tx.is_closed() {
+                if pooled.tx.ready().await.is_err() {
+                    continue;
+                }
                 return Ok(pooled);
             }
         }
