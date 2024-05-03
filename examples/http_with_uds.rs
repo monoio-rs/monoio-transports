@@ -2,14 +2,14 @@ use http::request;
 use monoio_http::{common::body::HttpBody, h1::payload::Payload};
 use monoio_transports::{
     connectors::{Connector, UnixConnector},
-    http::H1Connector,
+    http::HttpConnector,
 };
 
 const UDS_PATH: &str = "./examples/uds.sock";
 
 #[monoio::main]
-async fn main() -> Result<(), monoio_transports::Error> {
-    let connector: H1Connector<UnixConnector, _, _> = H1Connector::default();
+async fn main() -> Result<(), monoio_transports::TransportError> {
+    let connector: HttpConnector<UnixConnector, _, _> = HttpConnector::default();
     let mut conn = connector.connect(UDS_PATH).await.unwrap();
     let req = request::Builder::new()
         .uri("/get")

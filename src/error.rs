@@ -1,7 +1,7 @@
 use thiserror::Error as ThisError;
 
 #[derive(ThisError, Debug)]
-pub enum Error {
+pub enum TransportError {
     #[error("convert from uri error {0}")]
     FromUri(#[from] FromUriError),
     #[error("http header error")]
@@ -32,14 +32,16 @@ pub enum Error {
     MissingCodec,
     #[error("Validation error {0}")]
     Validation(String),
+    #[error("Acquire lock error {0}")]
+    LockError(#[from] local_sync::semaphore::AcquireError),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, TransportError>;
 
 #[derive(ThisError, Debug)]
 pub enum FromUriError {
     #[error("Invalid dns name {0}")]
-    InvalidDnsName(#[from] rustls::client::InvalidDnsNameError),
+    InvalidDnsName(#[from] rustls::pki_types::InvalidDnsNameError),
     #[error("Scheme not supported")]
     UnsupportScheme,
     #[error("Missing authority in uri")]

@@ -2,7 +2,7 @@ mod connection;
 mod connector;
 
 pub use connection::HttpConnection;
-pub use connector::H1Connector;
+pub use connector::HttpConnector;
 
 #[cfg(feature = "hyper")]
 pub mod hyper;
