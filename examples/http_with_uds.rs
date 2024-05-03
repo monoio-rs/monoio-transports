@@ -8,7 +8,7 @@ use monoio_transports::{
 const UDS_PATH: &str = "./examples/uds.sock";
 
 #[monoio::main]
-async fn main() -> Result<(), monoio_transports::Error> {
+async fn main() -> Result<(), monoio_transports::TransportError> {
     let connector: H1Connector<UnixConnector, _, _> = H1Connector::default();
     let mut conn = connector.connect(UDS_PATH).await.unwrap();
     let req = request::Builder::new()

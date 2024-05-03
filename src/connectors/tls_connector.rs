@@ -16,7 +16,7 @@ pub type TlsStream<C> = monoio_native_tls::TlsStream<C>;
 
 #[cfg(feature = "native-tls")]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ServerName(pub smol_str::SmolStr);
+pub struct TlsServerName(pub smol_str::SmolStr);
 #[cfg(feature = "native-tls")]
 pub use monoio_native_tls::TlsConnector as MonoioTlsConnector;
 #[cfg(feature = "native-tls")]
@@ -25,11 +25,15 @@ pub use monoio_native_tls::TlsError;
 pub use monoio_rustls::TlsConnector as MonoioTlsConnector;
 #[cfg(not(feature = "native-tls"))]
 pub use monoio_rustls::TlsError;
-#[cfg(not(feature = "native-tls"))]
-pub use rustls::ServerName;
 
 #[cfg(feature = "native-tls")]
-impl<T: Into<smol_str::SmolStr>> From<T> for ServerName {
+pub type ServerName<'a> = TlsServerName;
+
+#[cfg(not(feature = "native-tls"))]
+pub type ServerName<'a> = rustls::pki_types::ServerName<'a>;
+
+#[cfg(feature = "native-tls")]
+impl<T: Into<smol_str::SmolStr>> From<T> for ServerName<'static> {
     #[inline]
     fn from(value: T) -> Self {
         Self(value.into())
@@ -58,30 +62,35 @@ impl<C> TlsConnector<C> {
 
     #[cfg(not(feature = "native-tls"))]
     #[inline]
-    pub fn new_with_tls_default(inner_connector: C) -> Self {
+    pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<Vec<u8>>>) -> Self {
         let mut root_store = rustls::RootCertStore::empty();
-        root_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
-            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                ta.subject,
-                ta.spki,
-                ta.name_constraints,
-            )
-        }));
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-        let cfg = rustls::ClientConfig::builder()
-            .with_safe_defaults()
+        let mut cfg = rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
             .with_no_client_auth();
+
+        // Set ALPN from client side
+        if let Some(alpn) = alpn {
+            cfg.alpn_protocols = alpn;
+        }
+
         TlsConnector::new(inner_connector, cfg.into())
     }
 
     #[cfg(feature = "native-tls")]
     #[inline]
-    pub fn new_with_tls_default(inner_connector: C) -> Self {
-        TlsConnector::new(
-            inner_connector,
-            native_tls::TlsConnector::builder().build().unwrap().into(),
-        )
+    pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<Vec<u8>>>) -> Self {
+        let mut tls_connector = native_tls::TlsConnector::builder();
+        if let Some(alpn) = alpn {
+            // Convert alpn to &[&str]
+            let alpns = alpn
+                .iter()
+                .map(|a| std::str::from_utf8(a).unwrap())
+                .collect::<Vec<_>>();
+            tls_connector.request_alpns(&alpns);
+        }
+        TlsConnector::new(inner_connector, tls_connector.build().unwrap().into())
     }
 
     #[inline]
@@ -98,13 +107,13 @@ impl<C> TlsConnector<C> {
 impl<C: Default> Default for TlsConnector<C> {
     #[inline]
     fn default() -> Self {
-        TlsConnector::new_with_tls_default(Default::default())
+        TlsConnector::new_with_tls_default(Default::default(), None)
     }
 }
 
 impl<C, T, CN> Connector<T> for TlsConnector<C>
 where
-    T: AsRef<ServerName>,
+    T: AsRef<ServerName<'static>>,
     for<'a> C: Connector<&'a T, Error = std::io::Error, Connection = CN>,
     CN: AsyncReadRent + AsyncWriteRent,
 {
@@ -129,19 +138,19 @@ where
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnifiedTlsAddr {
     pub addr: super::UnifiedL4Addr,
-    pub sn: ServerName,
+    pub sn: ServerName<'static>,
 }
 
-impl Param<ServerName> for UnifiedTlsAddr {
+impl Param<ServerName<'static>> for UnifiedTlsAddr {
     #[inline]
-    fn param(&self) -> ServerName {
+    fn param(&self) -> ServerName<'static> {
         self.sn.clone()
     }
 }
 
-impl AsRef<ServerName> for UnifiedTlsAddr {
+impl AsRef<ServerName<'static>> for UnifiedTlsAddr {
     #[inline]
-    fn as_ref(&self) -> &ServerName {
+    fn as_ref(&self) -> &ServerName<'static> {
         &self.sn
     }
 }
@@ -164,19 +173,19 @@ impl AsRef<super::UnifiedL4Addr> for UnifiedTlsAddr {
 pub struct TcpTlsAddr {
     pub host: smol_str::SmolStr,
     pub port: u16,
-    pub sn: ServerName,
+    pub sn: ServerName<'static>,
 }
 
-impl Param<ServerName> for TcpTlsAddr {
+impl Param<ServerName<'static>> for TcpTlsAddr {
     #[inline]
-    fn param(&self) -> ServerName {
+    fn param(&self) -> ServerName<'static> {
         self.sn.clone()
     }
 }
 
-impl AsRef<ServerName> for TcpTlsAddr {
+impl AsRef<ServerName<'static>> for TcpTlsAddr {
     #[inline]
-    fn as_ref(&self) -> &ServerName {
+    fn as_ref(&self) -> &ServerName<'static> {
         &self.sn
     }
 }
@@ -218,7 +227,7 @@ impl TryFrom<&Uri> for TcpTlsAddr {
             }
             #[cfg(not(feature = "native-tls"))]
             {
-                ServerName::try_from(host.as_str())?
+                ServerName::try_from(host.to_string())?
             }
         };
 
@@ -277,19 +286,19 @@ impl<'a> Connector<&'a UnifiedTlsAddr> for UnifiedConnector {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnifiedAddr {
     pub addr: super::UnifiedL4Addr,
-    pub sn: Option<ServerName>,
+    pub sn: Option<ServerName<'static>>,
 }
 
-impl Param<Option<ServerName>> for UnifiedAddr {
+impl Param<Option<ServerName<'static>>> for UnifiedAddr {
     #[inline]
-    fn param(&self) -> Option<ServerName> {
+    fn param(&self) -> Option<ServerName<'static>> {
         self.sn.clone()
     }
 }
 
-impl AsRef<Option<ServerName>> for UnifiedAddr {
+impl AsRef<Option<ServerName<'static>>> for UnifiedAddr {
     #[inline]
-    fn as_ref(&self) -> &Option<ServerName> {
+    fn as_ref(&self) -> &Option<ServerName<'static>> {
         &self.sn
     }
 }
@@ -314,7 +323,7 @@ impl TryFrom<&Uri> for UnifiedAddr {
     #[inline]
     fn try_from(uri: &Uri) -> Result<Self, Self::Error> {
         let host = match uri.host() {
-            Some(a) => a,
+            Some(a) => a.to_string(),
             None => return Err(FromUriError::NoAuthority),
         };
 
@@ -326,7 +335,7 @@ impl TryFrom<&Uri> for UnifiedAddr {
         let port = uri.port_u16().unwrap_or(default_port);
 
         let l4_addr = super::UnifiedL4Addr::Tcp(
-            (host, port)
+            (host.to_string(), port)
                 .to_socket_addrs()?
                 .next()
                 .ok_or(crate::FromUriError::NoResolve)?,
@@ -339,7 +348,7 @@ impl TryFrom<&Uri> for UnifiedAddr {
             }
             #[cfg(not(feature = "native-tls"))]
             {
-                Some(ServerName::try_from(host)?)
+                Some(ServerName::try_from(host.to_string())?)
             }
         } else {
             None
