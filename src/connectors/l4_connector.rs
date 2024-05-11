@@ -12,9 +12,16 @@ use monoio::{
 
 use super::Connector;
 
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct TcpConnector {
     pub no_delay: bool,
+}
+
+impl Default for TcpConnector {
+    #[inline]
+    fn default() -> Self {
+        Self { no_delay: true }
+    }
 }
 
 impl<T: ToSocketAddrs> Connector<T> for TcpConnector {
