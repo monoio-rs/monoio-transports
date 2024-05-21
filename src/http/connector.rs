@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, collections::HashMap, rc::Rc};
+use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, time::Duration};
 
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 use monoio_http::{h1::codec::ClientCodec, h2::client::Builder as MonoioH2Builder};
@@ -9,7 +9,7 @@ use crate::{
     pool::{ConnectionPool, Key, Pooled},
 };
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 enum Protocol {
     HTTP2,
     HTTP11,
@@ -95,6 +95,14 @@ impl<C, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<C, K, IO> {
 
     fn is_config_h2(&self) -> bool {
         matches!(self.protocol, Protocol::HTTP2)
+    }
+
+    fn is_config_h1(&self) -> bool {
+        matches!(self.protocol, Protocol::HTTP11)
+    }
+
+    fn is_config_auto(&self) -> bool {
+        matches!(self.protocol, Protocol::Auto)
     }
 }
 
@@ -225,13 +233,17 @@ where
     type Error = crate::TransportError;
 
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
-        if let Some(conn) = try_get!(self, h2_pool, key) {
-            return Ok(conn.into());
+        if self.is_config_auto() || self.is_config_h2() {
+            if let Some(conn) = try_get!(self, h2_pool, key) {
+                return Ok(conn.into());
+            }
         }
 
-        if let Some(h1_pool) = &self.h1_pool {
-            if let Some(h1_pooled) = h1_pool.get(&key) {
-                return Ok(h1_pooled.into());
+        if self.is_config_auto() || self.is_config_h1() {
+            if let Some(h1_pool) = &self.h1_pool {
+                if let Some(h1_pooled) = h1_pool.get(&key) {
+                    return Ok(h1_pooled.into());
+                }
             }
         }
 
@@ -270,6 +282,107 @@ where
             };
             Ok(pooled.into())
         }
+    }
+}
+
+/// Retaining H1Connector for backwards compatibility.
+/// Use unified HttpConnector with `HttpConnector::build_tcp_http1_only()`
+/// or `HttpConnector::build_tls_http1_only()` instead.
+pub struct H1Connector<C, K, IO: AsyncWriteRent> {
+    inner_connector: C,
+    pool: Option<ConnectionPool<K, Http1Connection<IO>>>,
+    pub read_timeout: Option<Duration>,
+}
+
+impl<C: Clone, K, IO: AsyncWriteRent> Clone for H1Connector<C, K, IO> {
+    fn clone(&self) -> Self {
+        Self {
+            inner_connector: self.inner_connector.clone(),
+            pool: self.pool.clone(),
+            read_timeout: self.read_timeout,
+        }
+    }
+}
+
+impl<C, K, IO: AsyncWriteRent> H1Connector<C, K, IO> {
+    #[inline]
+    pub const fn new(inner_connector: C) -> Self {
+        Self {
+            inner_connector,
+            pool: None,
+            read_timeout: None,
+        }
+    }
+
+    #[inline]
+    #[allow(unused)]
+    pub const fn new_with_timeout(inner_connector: C, timeout: Duration) -> Self {
+        Self {
+            inner_connector,
+            pool: None,
+            read_timeout: Some(timeout),
+        }
+    }
+
+    #[inline]
+    #[allow(unused)]
+    pub fn pool(&mut self) -> &mut Option<ConnectionPool<K, Http1Connection<IO>>> {
+        &mut self.pool
+    }
+
+    #[inline]
+    #[allow(unused)]
+    pub fn read_timeout(&mut self) -> &mut Option<Duration> {
+        &mut self.read_timeout
+    }
+}
+
+impl<C, K: 'static, IO: AsyncWriteRent + 'static> H1Connector<C, K, IO> {
+    #[inline]
+    #[allow(unused)]
+    pub fn with_default_pool(self) -> Self {
+        Self {
+            pool: Some(ConnectionPool::default()),
+            ..self
+        }
+    }
+}
+
+impl<C: Default, K, IO: AsyncWriteRent> Default for H1Connector<C, K, IO> {
+    #[inline]
+    fn default() -> Self {
+        H1Connector::new(C::default())
+    }
+}
+
+impl<C, K: Key, IO: AsyncWriteRent> Connector<K> for H1Connector<C, K, IO>
+where
+    C: Connector<K, Connection = IO>,
+    // TODO: Remove AsyncReadRent after monoio-http new version published.
+    IO: AsyncReadRent + AsyncWriteRent + Split,
+{
+    type Connection = Pooled<K, Http1Connection<IO>>;
+    type Error = C::Error;
+
+    #[inline]
+    async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
+        if let Some(pool) = &self.pool {
+            if let Some(conn) = pool.get(&key) {
+                return Ok(conn);
+            }
+        }
+        let io: IO = self.inner_connector.connect(key.clone()).await?;
+        let client_codec = match self.read_timeout {
+            Some(timeout) => ClientCodec::new_with_timeout(io, timeout),
+            None => ClientCodec::new(io),
+        };
+        let http_conn = Http1Connection::new(client_codec);
+        let pooled = if let Some(pool) = &self.pool {
+            pool.link(key, http_conn)
+        } else {
+            Pooled::unpooled(http_conn)
+        };
+        Ok(pooled)
     }
 }
 
