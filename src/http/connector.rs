@@ -159,7 +159,7 @@ impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TlsConn
     /// let connector = HttpConnector::build_tls_http1_only();
     /// ```
     pub fn build_tls_http1_only() -> Self {
-        let alpn = vec![b"http/1.1".to_vec()];
+        let alpn = vec!["http/1.1"];
         let tls_connector = TlsConnector::new_with_tls_default(C::default(), Some(alpn));
         Self {
             connector: tls_connector,
@@ -181,7 +181,7 @@ impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TlsConn
     /// let connector = HttpConnector::build_tls_http2_only();
     /// ```
     pub fn build_tls_http2_only() -> Self {
-        let alpn = vec![b"h2".to_vec()];
+        let alpn = vec!["h2"];
         let tls_connector = TlsConnector::new_with_tls_default(C::default(), Some(alpn));
         Self {
             connector: tls_connector,

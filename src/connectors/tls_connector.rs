@@ -72,7 +72,7 @@ impl<C> TlsConnector<C> {
 
     #[cfg(not(feature = "native-tls"))]
     #[inline]
-    pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<Vec<u8>>>) -> Self {
+    pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<&str>>) -> Self {
         let mut root_store = rustls::RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
@@ -82,6 +82,7 @@ impl<C> TlsConnector<C> {
 
         // Set ALPN from client side
         if let Some(alpn) = alpn {
+            let alpn: Vec<Vec<u8>> = alpn.iter().map(|a| a.as_bytes().to_vec()).collect();
             cfg.alpn_protocols = alpn;
         }
 
@@ -90,15 +91,10 @@ impl<C> TlsConnector<C> {
 
     #[cfg(feature = "native-tls")]
     #[inline]
-    pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<Vec<u8>>>) -> Self {
+    pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<&str>>) -> Self {
         let mut tls_connector = native_tls::TlsConnector::builder();
         if let Some(alpn) = alpn {
-            // Convert alpn to &[&str]
-            let alpns = alpn
-                .iter()
-                .map(|a| std::str::from_utf8(a).unwrap())
-                .collect::<Vec<_>>();
-            tls_connector.request_alpns(&alpns);
+            tls_connector.request_alpns(&alpn);
         }
         TlsConnector::new(inner_connector, tls_connector.build().unwrap().into())
     }
@@ -117,7 +113,7 @@ impl<C> TlsConnector<C> {
 impl<C: Default> Default for TlsConnector<C> {
     #[inline]
     fn default() -> Self {
-        let alpn = Some(vec![b"h2".to_vec(), b"http/1.1".to_vec()]);
+        let alpn = Some(vec!["h2", "http/1.1"]);
         TlsConnector::new_with_tls_default(Default::default(), alpn)
     }
 }
