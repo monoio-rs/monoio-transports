@@ -10,7 +10,7 @@ use monoio::{
     net::{TcpStream, UnixStream},
 };
 
-use super::Connector;
+use super::{Connector, TransportConnMeta, TransportConnMetadata};
 
 #[derive(Clone, Copy, Debug)]
 pub struct TcpConnector {
@@ -40,6 +40,14 @@ impl<T: ToSocketAddrs> Connector<T> for TcpConnector {
     }
 }
 
+impl TransportConnMetadata for TcpStream {
+    type Metadata = TransportConnMeta;
+
+    fn get_conn_metadata(&self) -> Self::Metadata {
+        TransportConnMeta::default()
+    }
+}
+
 #[derive(Default, Clone, Copy, Debug)]
 pub struct UnixConnector;
 
@@ -50,6 +58,14 @@ impl<P: AsRef<Path>> Connector<P> for UnixConnector {
     #[inline]
     async fn connect(&self, key: P) -> Result<Self::Connection, Self::Error> {
         UnixStream::connect(key).await
+    }
+}
+
+impl TransportConnMetadata for UnixStream {
+    type Metadata = TransportConnMeta;
+
+    fn get_conn_metadata(&self) -> Self::Metadata {
+        TransportConnMeta::default()
     }
 }
 
