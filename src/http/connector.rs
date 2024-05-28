@@ -63,8 +63,14 @@ impl<C, K, IO: AsyncWriteRent> H1Connector<C, K, IO> {
 impl<C, K: 'static, IO: AsyncWriteRent + 'static> H1Connector<C, K, IO> {
     #[inline]
     pub fn with_default_pool(self) -> Self {
+        #[cfg(not(feature = "time"))]
+        let pool = ConnectionPool::new(None);
+        #[cfg(feature = "time")]
+        const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+        #[cfg(feature = "time")]
+        let pool = ConnectionPool::new_with_idle_interval(Some(DEFAULT_IDLE_TIMEOUT), None);
         Self {
-            pool: Some(ConnectionPool::default()),
+            pool: Some(pool),
             ..self
         }
     }
