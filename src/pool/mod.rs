@@ -1,3 +1,8 @@
+//! Provides connection pooling functionality for efficient connection reuse.
+//!
+//! This module includes the `ConnectionPool` for managing connections,
+//! `Pooled` for representing pooled connections, and related traits and types
+//! for implementing and interacting with connection pools.
 mod connector;
 mod map;
 mod reuse;

@@ -1,3 +1,25 @@
+//! HTTP connectors using Hyper for Monoio-based applications.
+//!
+//! This module provides HTTP/1.1 and HTTP/2 connectors that integrate Hyper with Monoio,
+//! allowing for efficient HTTP connections with built-in connection pooling. These connectors
+//! are designed to work with poll-based I/O, making them compatible with various Monoio
+//! transport layers.
+//!
+//! Key components:
+//!
+//! - [`HyperH1Connector`]: An HTTP/1.1 connector with connection pooling.
+//! - [`HyperH2Connector`]: An HTTP/2 connector with connection pooling and stream management.
+//! - [`HyperH1Connection`] and [`HyperH2Connection`]: Represent active HTTP connections.
+//! - [`HyperError`]: Error type for Hyper connector operations.
+//!
+//! These connectors can be used with various underlying transport mechanisms (e.g., TCP, TLS)
+//! by wrapping them with the appropriate Monoio connectors.
+//!
+//! Usage examples are provided for both HTTP/1.1 and HTTP/2 connectors, demonstrating how to
+//! create and use them with different transport layers.
+//!
+//! Note: The HTTP/2 implementation includes a custom stream management system to work around
+//! limitations in Hyper's stream counting capabilities.
 mod body;
 use std::{
     cell::UnsafeCell,
@@ -20,6 +42,10 @@ use crate::{
     pool::{ConnectionPool, Key, Poolable, Pooled},
 };
 
+/// HTTP/1.1 connector using Hyper with built-in connection pooling.
+///
+/// This connector manages a pool of HTTP/1.1 connections, allowing for efficient
+/// reuse of established connections.
 pub struct HyperH1Connector<C, K, B> {
     connector: C,
     pool: ConnectionPool<K, HyperH1Connection<B>>,
@@ -27,6 +53,33 @@ pub struct HyperH1Connector<C, K, B> {
 }
 
 impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
+    /// Creates a new HyperH1Connector with default settings and connection pooling.
+    ///
+    /// # Arguments
+    /// * `connector` - The underlying connector to use for establishing connections.
+    ///
+    /// # Examples
+    ///
+    /// Creating an HTTP connector:
+    /// ```rust
+    /// use bytes::Bytes;
+    /// use http_body_util::Empty;
+    /// use monoio_transports::connectors::{HyperH1Connector, PollIo, TcpConnector};
+    ///
+    /// let http_connector: HyperH1Connector<_, _, Empty<Bytes>> =
+    ///     HyperH1Connector::new(PollIo(TcpConnector::default()));
+    /// ```
+    ///
+    /// Creating an HTTPS connector:
+    /// ```rust
+    /// use bytes::Bytes;
+    /// use http_body_util::Empty;
+    /// use monoio_transports::connectors::{HyperH1Connector, PollIo, TcpConnector, TlsConnector};
+    ///
+    /// let tls_connector = TlsConnector::new(TcpConnector::default(), Default::default());
+    /// let https_connector: HyperH1Connector<_, _, Empty<Bytes>> =
+    ///     HyperH1Connector::new(PollIo(tls_connector));
+    /// ```
     #[inline]
     pub fn new(connector: C) -> Self {
         Self {
@@ -36,6 +89,7 @@ impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
         }
     }
 
+    /// Creates a new HyperH1Connector with a connection pool.
     #[inline]
     pub fn new_with_pool(connector: C, pool: ConnectionPool<K, HyperH1Connection<B>>) -> Self {
         Self {
@@ -47,12 +101,14 @@ impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
 }
 
 impl<C, K, B> HyperH1Connector<C, K, B> {
+    /// Sets the Hyper builder for the connector.
     #[inline]
     pub fn with_hyper_builder(mut self, builder: H1Builder) -> Self {
         self.builder = builder;
         self
     }
 
+    /// Returns a mutable reference to the Hyper builder.
     #[inline]
     pub fn hyper_builder(&mut self) -> &mut H1Builder {
         &mut self.builder
@@ -60,6 +116,10 @@ impl<C, K, B> HyperH1Connector<C, K, B> {
 }
 
 // TODO: maybe use h2 crate directly?
+/// HTTP/2 connector using Hyper with built-in connection pooling.
+///
+/// This connector manages a pool of HTTP/2 connections, allowing for efficient
+/// reuse of established connections and multiplexing of streams.
 pub struct HyperH2Connector<C, K, B> {
     connector: C,
     connecting: UnsafeCell<HashMap<K, Rc<tokio::sync::Mutex<()>>>>,
@@ -69,6 +129,7 @@ pub struct HyperH2Connector<C, K, B> {
 }
 
 impl<C, K, B> HyperH2Connector<C, K, B> {
+    /// Sets the Hyper builder for the connector.
     #[inline]
     pub fn with_hyper_builder(mut self, mut builder: H2Builder<MonoioExecutor>) -> Self {
         builder.timer(MonoioTimer);
@@ -76,6 +137,7 @@ impl<C, K, B> HyperH2Connector<C, K, B> {
         self
     }
 
+    /// Returns a mutable reference to the Hyper builder.
     #[inline]
     pub fn hyper_builder(&mut self) -> &mut H2Builder<MonoioExecutor> {
         &mut self.builder
@@ -98,6 +160,34 @@ impl<C, K, B> HyperH2Connector<C, K, B> {
 }
 
 impl<C, K: 'static, B: 'static> HyperH2Connector<C, K, B> {
+    /// Creates a new HyperH2Connector with default settings and connection pooling.
+    ///
+    /// # Arguments
+    /// * `connector` - The underlying connector to use for establishing connections.
+    ///
+    /// # Examples
+    ///
+    /// Creating an HTTP/2 connector (typically used over TLS):
+    /// ```rust
+    /// use bytes::Bytes;
+    /// use http_body_util::Empty;
+    /// use monoio_transports::connectors::{HyperH2Connector, PollIo, TcpConnector, TlsConnector};
+    ///
+    /// let tls_connector = TlsConnector::new(TcpConnector::default(), Default::default());
+    /// let h2_connector: HyperH2Connector<_, _, Empty<Bytes>> =
+    ///     HyperH2Connector::new(PollIo(tls_connector));
+    /// ```
+    ///
+    /// Creating an HTTP/2 connector with custom settings:
+    /// ```rust
+    /// use bytes::Bytes;
+    /// use http_body_util::Empty;
+    /// use monoio_transports::connectors::{HyperH2Connector, PollIo, TcpConnector, TlsConnector};
+    ///
+    /// let tls_connector = TlsConnector::new(TcpConnector::default(), Default::default());
+    /// let h2_connector: HyperH2Connector<_, _, Empty<Bytes>> =
+    ///     HyperH2Connector::new(PollIo(tls_connector)).with_max_stream_sender(Some(100));
+    /// ```
     #[inline]
     pub fn new(connector: C) -> Self {
         let mut builder = H2Builder::new(MonoioExecutor);

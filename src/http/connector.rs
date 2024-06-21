@@ -17,25 +17,29 @@ enum Protocol {
     Auto,
 }
 
-/// `HttpConnector` is a universal connector supporting both HTTP/1.1 and HTTP/2 protocols.
+/// `HttpConnector` is a universal connector supporting both HTTP/1.1 and HTTP/2 protocols,
+/// designed for use with monoio's native IO traits which work with io_uring.
 /// It can be used with a `TlsConnector` for HTTPS connections.
 ///
 /// ## Protocol Selection
-/// The protocol used depends on the context:
-///
+/// T///
 /// - When used with a `TlsConnector`, the protocol is determined by the ALPN negotiation. The
 ///   default `TlsConnector` sets the client's ALPN advertisement to `h2` and `http/1.1`.
 ///
-/// - For plain text HTTP, the default protocol is HTTP/1.1 unless the user specifically sets the
-///   client to a particular protocol.
+/// - For plain text HTTP, the default protocol is HTTP/1.1 unless th///   client to a particular
+///   protocol.
 ///
 /// | Connector Type | Protocol | Method | Example | Description |
 /// | --- | --- | --- | --- | --- |
-/// | `TcpConnector` | HTTP/1.1 | `build_tcp_http1_only()` | ```rust<br>let connector = HttpConnector::build_tcp_http1_only();<br>``` | Creates an `HttpConnector` that only supports HTTP/1.1 over TCP. |
-/// | `TcpConnector` | HTTP/2 | `build_tcp_http2_only()` | ```rust<br>let connector = HttpConnector::build_tcp_http2_only();<br>``` | Creates an `HttpConnector` that only supports HTTP/2 over TCP. |
-/// | `TlsConnector` | HTTP/1.1 and HTTP/2 | `default()` | ```rust<br>let connector: HttpConnector<TlsConnector<TcpConnector>, _, _> = HttpConnector::default();<br>``` | Creates a `HttpConnector` that supports both HTTP/1.1 and HTTP/2. |
-/// | `TlsConnector` | HTTP/1.1 | `build_tls_http1_only()` | ```rust<br>let connector = HttpConnector::build_tls_http1_only();<br>``` | Creates an `HttpConnector` with a `TlsConnector` that only supports HTTP/1.1. |
-/// | `TlsConnector` | HTTP/2 | `build_tls_http2_only()` | ```rust<br>let connector = HttpConnector::build_tls_http2_only();<br>``` | Creates an `HttpConnector` with a `TlsConnector` that only supports HTTP/2. |
+/// | `TlsConnector` | HTTP/1.1 and HTTP/2 | `default()` | ```rust<br>let connector: HttpConnector<TlsConnector<TcpConnector>, _, _> = HttpConnector::default();<br>``` | Creates a `HttpConnector` that supports both HTTP/1.1 and HTTP/2, leveraging monoio's io_uring capabilities. |
+/// | `TcpConnector` | HTTP/1.1 | `build_tcp_http1_only()` | ```rust<br>let connector = HttpConnector::build_tcp_http1_only();<br>``` | Creates an `HttpConnector` that only supports HTTP/1.1 over TCP, using monoio's native IO traits. |
+/// | `TcpConnector` | HTTP/2 | `build_tcp_http2_only()` | ```rust<br>let connector = HttpConnector::build_tcp_http2_only();<br>``` | Creates an `HttpConnector` that only supports HTTP/2 over TCP, optimized for io_uring. |
+/// | `TlsConnector` | HTTP/1.1 | `build_tls_http1_only()` | ```rust<br>let connector = HttpConnector::build_tls_http1_only();<br>``` | Creates an `HttpConnector` with a `TlsConnector` that only supports HTTP/1.1, using monoio's efficient I/O operations. |
+/// | `TlsConnector` | HTTP/2 | `build_tls_http2_only()` | ```rust<br>let connector = HttpConnector::build_tls_http2_only();<br>``` | Creates an `HttpConnector` with a `TlsConnector` that only supports HTTP/2, fully utilizing io_uring's performance benefits. |
+///
+/// Note: This connector is specifically designed to work with monoio's native IO traits,
+/// which are built on top of io_uring. This ensures optimal performance and efficiency
+/// when used within a monoio-based application.
 pub struct HttpConnector<C, K, IO: AsyncWriteRent> {
     connector: C,
     protocol: Protocol, // User configured protocol
@@ -195,6 +199,7 @@ impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TlsConn
 }
 
 impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> Default for HttpConnector<C, K, IO> {
+    /// Creates a new `HttpConnector` with the default configuration.
     #[inline]
     fn default() -> Self {
         HttpConnector::new(C::default())
@@ -285,9 +290,8 @@ where
     }
 }
 
-/// Retaining H1Connector for backwards compatibility.
-/// Use unified HttpConnector with `HttpConnector::build_tcp_http1_only()`
-/// or `HttpConnector::build_tls_http1_only()` instead.
+/// This struct is retained for backwards compatibility.
+/// It is recommended to use the unified `HttpConnector` instead.
 pub struct H1Connector<C, K, IO: AsyncWriteRent> {
     inner_connector: C,
     pool: Option<ConnectionPool<K, Http1Connection<IO>>>,

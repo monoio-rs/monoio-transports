@@ -1,3 +1,19 @@
+//! Provides poll-based I/O abstractions for compatibility between Monoio and Hyper.
+//!
+//! This module offers unified I/O abstractions and polling mechanisms for TCP and Unix Domain
+//! Sockets (UDS) that are compatible with Hyper's HTTP stack. It is specifically designed for
+//! use with poll-based I/O streams, not the native io_uring I/O traits.
+//!
+//! Key components:
+//!
+//! - `UnifiedL4StreamPoll`: A unified stream enum for TCP and UDS that implements Tokio's I/O
+//!   traits, essential for working with Hyper's HTTP stack.
+//!
+//! - `HyperIoWrapper`: A wrapper that implements Hyper I/O traits for types that implement Tokio's
+//!   I/O traits, bridging the gap between Monoio and Hyper.
+//!
+//! - `PollIo`: A connector wrapper that converts Monoio-style connections into poll-based
+//!   connections compatible with Hyper.
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -8,6 +24,10 @@ use thiserror::Error as ThisError;
 
 use super::Connector;
 
+//  They are required to work when using hyper' http stack
+/// A unified stream for TCP and UDS which implement Tokio's IO traits.
+///
+/// This enum is required to work with Hyper's HTTP stack.
 pub enum UnifiedL4StreamPoll {
     Tcp(monoio::net::tcp::stream_poll::TcpStreamPoll),
     Unix(monoio::net::unix::stream_poll::UnixStreamPoll),

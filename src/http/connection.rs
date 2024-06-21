@@ -24,6 +24,7 @@ use monoio_http::{
 
 use crate::pool::{Key, Poolable, Pooled};
 
+/// A HTTP/1.1 connection.
 pub struct Http1Connection<IO: AsyncWriteRent> {
     framed: ClientCodec<IO>,
     using: bool,
@@ -126,6 +127,7 @@ impl<IO: AsyncReadRent + AsyncWriteRent> Http1Connection<IO> {
     }
 }
 
+/// A HTTP/2 connection.
 #[derive(Clone, Debug)]
 pub struct Http2Connection {
     tx: SendRequest<Bytes>,
@@ -214,6 +216,11 @@ impl Http2Connection {
     }
 }
 
+/// A unified representation of an HTTP connection, supporting both HTTP/1.1 and HTTP/2 protocols.
+///
+/// This enum is designed to work with monoio's native IO traits, which are optimized for io_uring.
+/// It allows for efficient handling of both HTTP/1.1 and HTTP/2 connections within the same
+/// abstraction.
 pub enum HttpConnection<K: Key, IO: AsyncReadRent + AsyncWriteRent> {
     Http1(Pooled<K, Http1Connection<IO>>),
     Http2(Http2Connection),
@@ -244,6 +251,39 @@ impl<K: Key, IO: AsyncReadRent + AsyncWriteRent> From<Http2Connection> for HttpC
 }
 
 impl<K: Key, IO: AsyncReadRent + AsyncWriteRent> HttpConnection<K, IO> {
+    /// Sends an HTTP request using the appropriate protocol (HTTP/1.1 or HTTP/2).
+    ///
+    /// This method automatically handles the differences between HTTP/1.1 and HTTP/2,
+    /// providing a unified interface for sending requests.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The HTTP request to send.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// - `Result<Response<HttpBody>, HttpError>`: The HTTP response or an error.
+    /// - `bool`: Indicates whether the connection can be reused (true) or should be closed (false).
+    ///
+    /// # Type Parameters
+    ///
+    /// * `R`: The request type, which must be convertible into parts with a `RequestHead`.
+    /// * `E`: The error type for the `ClientCodec`, which must be convertible into `HttpError`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use crate::{HttpConnection, Request, Response, HttpBody, HttpError};
+    /// # async fn example<K: Key, IO: AsyncReadRent + AsyncWriteRent>(
+    /// #     mut conn: HttpConnection<K, IO>,
+    /// #     request: Request<Vec<u8>>
+    /// # ) -> Result<(), HttpError> {
+    /// let (response, can_reuse) = conn.send_request(request).await;
+    /// let response: Response<HttpBody> = response?;
+    ///  Ok(())
+    /// }
+    /// ```
     pub async fn send_request<R, E>(
         &mut self,
         request: R,

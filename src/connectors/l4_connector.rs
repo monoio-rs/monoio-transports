@@ -12,8 +12,10 @@ use monoio::{
 
 use super::{Connector, TransportConnMeta, TransportConnMetadata};
 
+/// A connector for establishing TCP connections.
 #[derive(Clone, Copy, Debug)]
 pub struct TcpConnector {
+    /// Whether to set TCP_NODELAY on the created connection.
     pub no_delay: bool,
 }
 
@@ -48,6 +50,7 @@ impl TransportConnMetadata for TcpStream {
     }
 }
 
+// A connector for establishing Unix domain socket connections.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct UnixConnector;
 
@@ -69,6 +72,7 @@ impl TransportConnMetadata for UnixStream {
     }
 }
 
+/// A connector that can establish either TCP or Unix domain socket connections.
 #[derive(Default, Clone, Copy, Debug)]
 pub struct UnifiedL4Connector {
     tcp: TcpConnector,
@@ -121,6 +125,7 @@ impl TryFrom<Uri> for UnifiedL4Addr {
     }
 }
 
+/// A unified L4 stream that can be either a TCP or Unix stream.
 #[derive(Debug)]
 pub enum UnifiedL4Stream {
     Tcp(TcpStream),

@@ -49,7 +49,12 @@ impl<S> TransportConnMetadata for TlsStream<S> {
         meta
     }
 }
-
+/// A connector for establishing TLS connections over an inner connector.
+///
+/// This connector wraps another connector (typically a TCP or Unix socket connector)
+/// and adds TLS encryption to the connection. The underlying TLS implentation
+/// can be either `rustls` or `native-tls` depending on the feature flags. Set th
+/// `native-tls` feature to use the `native-tls` implementation.
 #[derive(Clone)]
 pub struct TlsConnector<C> {
     inner_connector: C,
@@ -70,6 +75,7 @@ impl<C> TlsConnector<C> {
         }
     }
 
+    // Create a new `TlsConnector` with custom ALPN protocols.
     #[cfg(not(feature = "native-tls"))]
     #[inline]
     pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<&str>>) -> Self {
@@ -89,6 +95,7 @@ impl<C> TlsConnector<C> {
         TlsConnector::new(inner_connector, cfg.into())
     }
 
+    // Create a new `TlsConnector` with custom ALPN protocols.
     #[cfg(feature = "native-tls")]
     #[inline]
     pub fn new_with_tls_default(inner_connector: C, alpn: Option<Vec<&str>>) -> Self {
@@ -111,6 +118,8 @@ impl<C> TlsConnector<C> {
 }
 
 impl<C: Default> Default for TlsConnector<C> {
+    /// Create a new `TlsConnector` with the default inner connector.
+    /// Additionally, the default ALPN protocols are set to `h2` and `http/1.1`.
     #[inline]
     fn default() -> Self {
         let alpn = Some(vec!["h2", "http/1.1"]);
@@ -142,6 +151,7 @@ where
     }
 }
 
+/// A unified TLS address that can be either a TCP or Unix address.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct UnifiedTlsAddr {
     pub addr: super::UnifiedL4Addr,
@@ -374,6 +384,7 @@ impl TryFrom<Uri> for UnifiedAddr {
     }
 }
 
+/// A unified stream that can be either a L4 or TLS stream.
 #[derive(Debug)]
 pub enum UnifiedStream {
     L4(super::UnifiedL4Stream),
