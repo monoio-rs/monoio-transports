@@ -418,6 +418,12 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
 
         Pooled::new(key, conn, false, Rc::downgrade(&self.shared))
     }
+
+    #[inline]
+    pub fn get_idle_connection_count(&self) -> usize {
+        let inner: &PoolInner<K, T> = unsafe { &*self.shared.get() };
+        inner.idle_conns.len()
+    }
 }
 
 // TODO: make interval not eq to idle_dur
