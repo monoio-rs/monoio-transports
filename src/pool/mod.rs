@@ -422,7 +422,7 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
     #[inline]
     pub fn get_idle_connection_count(&self) -> usize {
         let inner: &PoolInner<K, T> = unsafe { &*self.shared.get() };
-        inner.idle_conns.len()
+        inner.idle_conns.values().map(|v: &VecDeque<Idle<T>>| v.len()).sum()
     }
 }
 
