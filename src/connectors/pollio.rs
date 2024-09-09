@@ -276,6 +276,7 @@ pub enum PollConnectError<CE> {
     Convert(#[from] std::io::Error),
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct PollIo<C>(pub C);
 
 impl<C, K, T> Connector<K> for PollIo<C>
