@@ -46,10 +46,11 @@ use crate::{
 ///
 /// This connector manages a pool of HTTP/1.1 connections, allowing for efficient
 /// reuse of established connections.
+#[derive(Debug, Clone)]
 pub struct HyperH1Connector<C, K, B> {
-    connector: C,
+    connector: Rc<C>,
     pool: ConnectionPool<K, HyperH1Connection<B>>,
-    builder: H1Builder,
+    builder: Rc<H1Builder>,
 }
 
 impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
@@ -83,9 +84,9 @@ impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
     #[inline]
     pub fn new(connector: C) -> Self {
         Self {
-            connector,
+            connector: Rc::new(connector),
             pool: ConnectionPool::new(None),
-            builder: H1Builder::new(),
+            builder: Rc::new(H1Builder::new()),
         }
     }
 
@@ -93,9 +94,9 @@ impl<C, K: 'static, B: 'static> HyperH1Connector<C, K, B> {
     #[inline]
     pub fn new_with_pool(connector: C, pool: ConnectionPool<K, HyperH1Connection<B>>) -> Self {
         Self {
-            connector,
+            connector: Rc::new(connector),
             pool,
-            builder: H1Builder::new(),
+            builder: Rc::new(H1Builder::new()),
         }
     }
 }
@@ -104,14 +105,14 @@ impl<C, K, B> HyperH1Connector<C, K, B> {
     /// Sets the Hyper builder for the connector.
     #[inline]
     pub fn with_hyper_builder(mut self, builder: H1Builder) -> Self {
-        self.builder = builder;
+        self.builder = Rc::new(builder);
         self
     }
 
     /// Returns a mutable reference to the Hyper builder.
     #[inline]
-    pub fn hyper_builder(&mut self) -> &mut H1Builder {
-        &mut self.builder
+    pub fn hyper_builder(&self) -> &H1Builder {
+        &self.builder
     }
 
     #[inline]
@@ -307,7 +308,7 @@ pub enum HyperError<CE> {
 
 impl<C, K, T, B> Connector<K> for HyperH1Connector<C, K, B>
 where
-    C: Connector<K, Connection = T>,
+    C: Connector<K, Connection = T> + 'static,
     K: Key,
     T: Read + Write + Unpin + 'static,
     B: Body + 'static,
@@ -320,10 +321,38 @@ where
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
         while let Some(mut pooled) = self.pool.get(&key) {
             if !pooled.tx.is_closed() {
-                if pooled.tx.ready().await.is_err() {
-                    continue;
+                if pooled.tx.is_ready() {
+                    return Ok(pooled);
                 }
-                return Ok(pooled);
+
+                let connector = self.connector.clone();
+                let key_clone = key.clone();
+                let mut create_conn = async move { connector.connect(key_clone).await };
+                let mut pin_create_conn = unsafe { std::pin::Pin::new_unchecked(&mut create_conn) };
+
+                monoio::select! {
+                    // when connection ready, spawn the ongoing connection creation
+                    r = pooled.tx.ready() => {
+                        r?;
+                        let builder = self.builder.clone();
+                        let pool = self.pool.clone();
+                        monoio::spawn(async move {
+                            let Ok(conn) = create_conn.await else { return };
+                            let Ok((tx, conn)) = builder.handshake::<_, B>(conn).await else { return };
+                            drop(pool.link(key, HyperH1Connection { tx }));
+                            let _ = conn.await;
+                        });
+                        return Ok(pooled);
+                    },
+                    // when new connection established, return it directly
+                    // note: the not-ready connection will be put back by drop
+                    r = &mut pin_create_conn => {
+                        let conn = r.map_err(HyperError::Connect)?;
+                        let (tx, conn) = self.builder.handshake::<_, B>(conn).await?;
+                        monoio::spawn(conn);
+                        return Ok(self.pool.link(key, HyperH1Connection { tx }));
+                    },
+                }
             }
         }
         let underlying = self
@@ -333,8 +362,7 @@ where
             .map_err(HyperError::Connect)?;
         let (tx, conn) = self.builder.handshake::<_, B>(underlying).await?;
         monoio::spawn(conn);
-        let pooled = self.pool.link(key, HyperH1Connection { tx });
-        Ok(pooled)
+        Ok(self.pool.link(key, HyperH1Connection { tx }))
     }
 }
 
