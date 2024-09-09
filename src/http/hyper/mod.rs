@@ -113,6 +113,11 @@ impl<C, K, B> HyperH1Connector<C, K, B> {
     pub fn hyper_builder(&mut self) -> &mut H1Builder {
         &mut self.builder
     }
+
+    #[inline]
+    pub fn get_connection_pool(&self) -> &ConnectionPool<K, HyperH1Connection<B>> {
+        &self.pool
+    }
 }
 
 // TODO: maybe use h2 crate directly?
@@ -156,6 +161,11 @@ impl<C, K, B> HyperH2Connector<C, K, B> {
     pub fn with_max_stream_sender(mut self, max_stream_sender: Option<usize>) -> Self {
         self.max_stream_sender = max_stream_sender;
         self
+    }
+
+    #[inline]
+    pub fn get_connection_pool(&self) -> &ConnectionPool<K, HyperH2Connection<B>> {
+        &self.pool
     }
 }
 

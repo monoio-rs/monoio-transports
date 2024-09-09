@@ -162,7 +162,7 @@ impl<T: Poolable, K: Key> Drop for Pooled<K, T> {
                         .idle_conns
                         .entry(key)
                         .or_insert(VecDeque::with_capacity(pool.max_idle));
-                    if queue.len() > pool.max_idle {
+                    if queue.len() >= pool.max_idle {
                         for _ in 0..queue.len() - pool.max_idle {
                             let _ = queue.pop_front();
                         }
@@ -417,6 +417,12 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
         tracing::debug!("linked new connection to the pool");
 
         Pooled::new(key, conn, false, Rc::downgrade(&self.shared))
+    }
+
+    #[inline]
+    pub fn get_idle_connection_count(&self) -> usize {
+        let inner: &PoolInner<K, T> = unsafe { &*self.shared.get() };
+        inner.idle_conns.values().map(|v: &VecDeque<Idle<T>>| v.len()).sum()
     }
 }
 
