@@ -162,7 +162,7 @@ impl<T: Poolable, K: Key> Drop for Pooled<K, T> {
                         .idle_conns
                         .entry(key)
                         .or_insert(VecDeque::with_capacity(pool.max_idle));
-                    if queue.len() > pool.max_idle {
+                    if queue.len() >= pool.max_idle {
                         for _ in 0..queue.len() - pool.max_idle {
                             let _ = queue.pop_front();
                         }
