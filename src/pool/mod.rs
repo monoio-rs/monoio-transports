@@ -32,8 +32,8 @@ pub trait Poolable {
 
 type SharedPool<K, IO> = Rc<UnsafeCell<PoolInner<K, IO>>>;
 type WeakPool<K, IO> = Weak<UnsafeCell<PoolInner<K, IO>>>;
-
 pub trait Key: Eq + Hash + Clone + 'static {}
+
 impl<T: Eq + Hash + Clone + 'static> Key for T {}
 
 // Partly borrow from hyper-util. All rights reserved.
@@ -214,7 +214,7 @@ impl<IO> Idle<IO> {
 }
 
 pub(crate) struct PoolInner<K, IO> {
-    idle_conns: HashMap<K, VecDeque<Idle<IO>>>,
+    idle_conns: fxhash::FxHashMap<K, VecDeque<Idle<IO>>>,
     max_idle: usize,
     #[cfg(feature = "time")]
     idle_dur: Option<Duration>,
@@ -225,10 +225,10 @@ pub(crate) struct PoolInner<K, IO> {
 impl<K, IO> PoolInner<K, IO> {
     #[cfg(feature = "time")]
     fn new_with_dropper(max_idle: Option<usize>) -> (local_sync::oneshot::Sender<()>, Self) {
-        let idle_conns = HashMap::with_capacity(DEFAULT_POOL_SIZE);
+        let idle_conns = fxhash::FxHashMap::default();
         let max_idle = max_idle
             .map(|n| n.min(MAX_KEEPALIVE_CONNS))
-            .unwrap_or(DEFAULT_KEEPALIVE_CONNS);
+            .unwrap_or(MAX_KEEPALIVE_CONNS);
 
         let (tx, drop) = local_sync::oneshot::channel();
         (
@@ -243,7 +243,8 @@ impl<K, IO> PoolInner<K, IO> {
     }
 
     fn new(max_idle: Option<usize>) -> Self {
-        let idle_conns = HashMap::with_capacity(DEFAULT_POOL_SIZE);
+        // let idle_conns = HashMap::with_capacity(DEFAULT_POOL_SIZE);
+        let idle_conns = fxhash::FxHashMap::default();
         let max_idle = max_idle
             .map(|n| n.min(MAX_KEEPALIVE_CONNS))
             .unwrap_or(DEFAULT_KEEPALIVE_CONNS);

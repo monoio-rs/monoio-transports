@@ -1,3 +1,4 @@
+use core::panic;
 use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, time::Duration};
 
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
@@ -238,11 +239,11 @@ where
     type Error = crate::TransportError;
 
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
-        if self.is_config_auto() || self.is_config_h2() {
-            if let Some(conn) = try_get!(self, h2_pool, key) {
-                return Ok(conn.into());
-            }
-        }
+        // if self.is_config_auto() || self.is_config_h2() {
+        //     if let Some(conn) = try_get!(self, h2_pool, key) {
+        //         return Ok(conn.into());
+        //     }
+        // }
 
         if self.is_config_auto() || self.is_config_h1() {
             if let Some(h1_pool) = &self.h1_pool {
@@ -259,24 +260,25 @@ where
         let connect_to_h2 = self.is_config_h2() || conn_meta.is_alpn_h2();
 
         if connect_to_h2 {
-            let lock = {
-                let connecting = unsafe { &mut *self.connecting.get() };
-                let lock = connecting
-                    .entry(key.clone())
-                    .or_insert_with(|| Rc::new(local_sync::semaphore::Semaphore::new(1)));
-                lock.clone()
-            };
+            // let lock = {
+            //     let connecting = unsafe { &mut *self.connecting.get() };
+            //     let lock = connecting
+            //         .entry(key.clone())
+            //         .or_insert_with(|| Rc::new(local_sync::semaphore::Semaphore::new(1)));
+            //     lock.clone()
+            // };
 
-            // get lock and try again
-            let _guard = lock.acquire().await?;
-            if let Some(conn) = try_get!(self, h2_pool, key) {
-                return Ok(conn.into());
-            }
+            // // get lock and try again
+            // let _guard = lock.acquire().await?;
+            // if let Some(conn) = try_get!(self, h2_pool, key) {
+            //     return Ok(conn.into());
+            // }
 
-            let (tx, conn) = self.h2_builder.handshake(transport_conn).await?;
-            monoio::spawn(conn);
-            self.h2_pool.put(key, Http2Connection::new(tx.clone()));
-            Ok(Http2Connection::new(tx.clone()).into())
+            // let (tx, conn) = self.h2_builder.handshake(transport_conn).await?;
+            // monoio::spawn(conn);
+            // self.h2_pool.put(key, Http2Connection::new(tx.clone()));
+            // Ok(Http2Connection::new(tx.clone()).into())
+            panic!("HTTP/2 not implemented yet");
         } else {
             let client_codec = ClientCodec::new(transport_conn);
             let http_conn = Http1Connection::new(client_codec);
