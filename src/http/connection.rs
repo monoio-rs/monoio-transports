@@ -1,11 +1,9 @@
+use bytes::Bytes;
 use http::Response;
-use monoio::{
-    buf::IoBuf,
-    io::{
-        sink::{Sink, SinkExt},
-        stream::Stream,
-        AsyncReadRent, AsyncWriteRent,
-    },
+use monoio::io::{
+    sink::{Sink, SinkExt},
+    stream::Stream,
+    AsyncReadRent, AsyncWriteRent,
 };
 use monoio_http::{
     common::{
@@ -132,7 +130,7 @@ impl<IO: AsyncReadRent + AsyncWriteRent> Http1Connection<IO> {
 /// A HTTP/2 connection.
 #[derive(Clone, Debug)]
 pub struct Http2Connection {
-    tx: SendRequest<&'static [u8]>,
+    tx: SendRequest<Bytes>,
 }
 
 impl Poolable for Http2Connection {
@@ -143,7 +141,7 @@ impl Poolable for Http2Connection {
 }
 
 impl Http2Connection {
-    pub fn new(tx: SendRequest<&'static [u8]>) -> Self {
+    pub fn new(tx: SendRequest<Bytes>) -> Self {
         Self { tx }
     }
 
@@ -166,8 +164,7 @@ impl Http2Connection {
     ) -> (Result<Response<HttpBody>, HttpError>, bool)
     where
         R: IntoParts<Parts = RequestHead>,
-        R::Body: Body,
-        <R::Body as Body>::Error: Into<HttpError>,
+        R::Body: Body<Data = Bytes, Error = HttpError>,
     {
         let mut client = match self.tx.clone().ready().await {
             Ok(client) => client,
@@ -189,8 +186,6 @@ impl Http2Connection {
         while let Some(data) = body.next_data().await {
             match data {
                 Ok(data) => {
-                    let data =
-                        unsafe { std::slice::from_raw_parts(data.read_ptr(), data.bytes_init()) };
                     if let Err(e) = send_stream.send_data(data, false) {
                         #[cfg(feature = "logging")]
                         tracing::error!("H2 client body send error {:?}", e);
@@ -198,16 +193,14 @@ impl Http2Connection {
                     }
                 }
                 Err(e) => {
-                    let e: HttpError = e.into();
                     #[cfg(feature = "logging")]
                     tracing::error!("H2 request body stream error {:?}", e);
                     return (Err(e), false);
                 }
             }
         }
-        let empty_slice: &[u8] = &[];
         // Mark end of stream
-        let _ = send_stream.send_data(empty_slice, true);
+        let _ = send_stream.send_data(Bytes::new(), true);
 
         let response = match response.await {
             Ok(response) => response,
@@ -299,8 +292,7 @@ impl<K: Key, IO: AsyncReadRent + AsyncWriteRent> HttpConnection<K, IO> {
         ClientCodec<IO>: Sink<R, Error = E>,
         E: std::fmt::Debug + Into<HttpError>,
         R: IntoParts<Parts = RequestHead>,
-        R::Body: Body,
-        <R::Body as Body>::Error: Into<HttpError>,
+        R::Body: Body<Data = Bytes, Error = HttpError>,
     {
         match self {
             Self::Http1(conn) => conn.send_request(request).await,
