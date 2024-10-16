@@ -1,8 +1,9 @@
 //! Defines core traits and types for creating and composing network connectors.
 //!
 //! This module provides the [`Connector`](Connector) trait for establishing connections,
-//! the `ConnectorExt` trait for adding t//! [`TransportConnMetadata`](TransportConnMetadata) trait for retrieving connection
-//! metadata. It also includes types for ALPN negotiation and connection metadata.
+//! the `ConnectorExt` trait for adding t//! [`TransportConnMetadata`](TransportConnMetadata) trait
+//! for retrieving connection metadata. It also includes types for ALPN negotiation and connection
+//! metadata.
 mod l4_connector;
 #[cfg(feature = "hyper")]
 pub mod pollio;
