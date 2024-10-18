@@ -32,12 +32,11 @@ impl<T: ToSocketAddrs> Connector<T> for TcpConnector {
 
     #[inline]
     async fn connect(&self, key: T) -> Result<Self::Connection, Self::Error> {
-        TcpStream::connect(key).await.map(|io| {
+        TcpStream::connect(key).await.inspect(|io| {
             if self.no_delay {
                 // we will ignore the set nodelay error
                 let _ = io.set_nodelay(true);
             }
-            io
         })
     }
 }

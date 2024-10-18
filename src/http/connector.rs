@@ -208,7 +208,7 @@ impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> Default for HttpConne
 
 macro_rules! try_get {
     ($self:ident, $pool:ident, $key:ident) => {
-        $self.$pool.and_then_mut(&$key, |conns| {
+        $self.$pool.and_then_mut(&$key, |mut conns| {
             conns.retain(|idle| {
                 // Remove any connections that have errored
                 match idle.conn.conn_error() {
