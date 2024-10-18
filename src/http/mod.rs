@@ -6,13 +6,12 @@
 //!
 //! # Key Components
 //!
-//! - [`HttpConnection`](HttpConnection): A unified enum representing either an HTTP/1.1 or HTTP/2
-//!   connection. It provides a common interface for sending requests regardless of the underlying
-//!   protocol.
+//! - [`HttpConnection`]: A unified enum representing either an HTTP/1.1 or HTTP/2 connection. It
+//!   provides a common interface for sending requests regardless of the underlying protocol.
 //!
-//! - [`HttpConnector`](HttpConnection): A universal connector supporting both HTTP/1.1 and HTTP/2
-//!   protocols. It can be used with a `TlsConnector` for HTTPS connections and is specifically
-//!   designed to work with monoio's native IO traits, which are built on top of io_uring.
+//! - [`HttpConnector`]: A universal connector supporting both HTTP/1.1 and HTTP/2 protocols. It can
+//!   be used with a `TlsConnector` for HTTPS connections and is specifically designed to work with
+//!   monoio's native IO traits, which are built on top of io_uring.
 //!
 //! - [`H1Connector`]: A deprecated HTTP/1.1 connector retained for backwards compatibility. New
 //!   code should use `HttpConnector` instead.
@@ -53,5 +52,5 @@ mod connector;
 pub use connection::HttpConnection;
 pub use connector::{H1Connector, HttpConnector};
 
-// #[cfg(feature = "hyper")]
-// pub mod hyper;
+#[cfg(feature = "hyper")]
+pub mod hyper;

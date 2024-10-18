@@ -21,7 +21,7 @@ pub use map::{ConnectorMap, ConnectorMapper};
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 pub use reuse::{Reuse, ReuseConnector};
 
-pub(crate) const DEFAULT_KEEPALIVE_CONNS: usize = 256;
+pub(crate) const DEFAULT_KEEPALIVE_CONNS: usize = 1024;
 pub(crate) const DEFAULT_POOL_SIZE: usize = 32;
 // https://datatracker.ietf.org/doc/html/rfc6335
 pub(crate) const MAX_KEEPALIVE_CONNS: usize = 16384;
@@ -44,6 +44,7 @@ pub struct Pooled<K: Key, T: Poolable> {
     key: Option<K>,
     pool: Option<WeakPool<K, T>>,
     queue: Option<WeakQueue<T>>,
+    max_idle: usize,
 }
 
 unsafe impl<K: Key, T: Poolable + Split> Split for Pooled<K, T> {}
@@ -102,6 +103,7 @@ impl<T: Poolable, K: Key> Pooled<K, T> {
         is_reused: bool,
         pool: WeakPool<K, T>,
         queue: Option<WeakQueue<T>>,
+        max_idle: usize,
     ) -> Self {
         Self {
             value: Some(value),
@@ -109,6 +111,7 @@ impl<T: Poolable, K: Key> Pooled<K, T> {
             key: Some(key),
             pool: Some(pool),
             queue,
+            max_idle,
         }
     }
 
@@ -120,6 +123,7 @@ impl<T: Poolable, K: Key> Pooled<K, T> {
             key: None,
             pool: None,
             queue: None,
+            max_idle: DEFAULT_KEEPALIVE_CONNS,
         }
     }
 
@@ -167,6 +171,12 @@ impl<T: Poolable, K: Key> Drop for Pooled<K, T> {
             // Add the connection back to the queue directly if the weak reference is still alive.
             if let Some(weak_queue) = &self.queue {
                 if let Some(queue) = weak_queue.upgrade() {
+                    let len = queue.borrow().len();
+                    if len >= self.max_idle {
+                        for _ in 0..len - self.max_idle {
+                            let _ = queue.borrow_mut().pop_front();
+                        }
+                    }
                     let idle = Idle::new(value);
                     queue.borrow_mut().push_back(idle);
                     return;
@@ -362,6 +372,7 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
                         true,
                         Rc::downgrade(&self.shared),
                         Some(Rc::downgrade(v)),
+                        inner.max_idle,
                     )),
                     Some(_) => {
                         continue;
@@ -423,9 +434,9 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
         inner.idle_conns.get_mut(key).map(|l| l.borrow_mut()).map(f)
     }
 
-    // /// Get a reference to the element and apply f with and_then.
-    // /// Mostly use by h2.
-    // #[inline]
+    /// Get a reference to the element and apply f with and_then.
+    /// Mostly use by h2.
+    #[inline]
     #[allow(unused)]
     pub(crate) fn and_then_mut<F: FnOnce(RefMut<VecDeque<Idle<T>>>) -> Option<O>, O>(
         &self,
@@ -448,7 +459,14 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
         let inner = unsafe { &mut *self.shared.get() };
         let queue = inner.idle_conns.get_mut(&key).map(|v| Rc::downgrade(v));
 
-        Pooled::new(key, conn, false, Rc::downgrade(&self.shared), queue)
+        Pooled::new(
+            key,
+            conn,
+            false,
+            Rc::downgrade(&self.shared),
+            queue,
+            inner.max_idle,
+        )
     }
 
     #[inline]

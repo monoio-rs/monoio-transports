@@ -1,9 +1,10 @@
 //! Defines core traits and types for creating and composing network connectors.
 //!
-//! This module provides the [`Connector`](Connector) trait for establishing connections,
-//! the `ConnectorExt` trait for adding t//! [`TransportConnMetadata`](TransportConnMetadata) trait
-//! for retrieving connection metadata. It also includes types for ALPN negotiation and connection
-//! metadata.
+//! This module provides the following key components:
+//!
+//! - The [`Connector`] trait for establishing connections
+//! - The [`ConnectorExt`] trait for adding timeout functionality
+//! - The [`TransportConnMetadata`] trait for retrieving connection metadata
 mod l4_connector;
 #[cfg(feature = "hyper")]
 pub mod pollio;
@@ -14,8 +15,7 @@ use std::{future::Future, time::Duration};
 pub use l4_connector::*;
 pub use tls_connector::*;
 
-/// The [`Connector`](Conenctor) trait defines an interface for establishing connections.
-///
+/// The [`Connector`] trait defines an interface for establishing connections.
 /// This trait is designed to be composable, allowing for the creation of modular
 /// and stackable connectors. Each connector in the stack can add its own layer
 /// of functionality, such as TCP connection, Unix Domain Socket (UDS) connection,
