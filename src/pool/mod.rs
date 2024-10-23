@@ -7,7 +7,7 @@ mod connector;
 mod map;
 mod reuse;
 use std::{
-    cell::UnsafeCell,
+    cell::{RefCell, RefMut, UnsafeCell},
     collections::{HashMap, VecDeque},
     fmt::Debug,
     hash::Hash,
@@ -21,7 +21,7 @@ pub use map::{ConnectorMap, ConnectorMapper};
 use monoio::io::{AsyncReadRent, AsyncWriteRent, Split};
 pub use reuse::{Reuse, ReuseConnector};
 
-pub(crate) const DEFAULT_KEEPALIVE_CONNS: usize = 256;
+pub(crate) const DEFAULT_KEEPALIVE_CONNS: usize = 1024;
 pub(crate) const DEFAULT_POOL_SIZE: usize = 32;
 // https://datatracker.ietf.org/doc/html/rfc6335
 pub(crate) const MAX_KEEPALIVE_CONNS: usize = 16384;
@@ -32,8 +32,9 @@ pub trait Poolable {
 
 type SharedPool<K, IO> = Rc<UnsafeCell<PoolInner<K, IO>>>;
 type WeakPool<K, IO> = Weak<UnsafeCell<PoolInner<K, IO>>>;
-
+type WeakQueue<IO> = Weak<RefCell<VecDeque<Idle<IO>>>>;
 pub trait Key: Eq + Hash + Clone + 'static {}
+
 impl<T: Eq + Hash + Clone + 'static> Key for T {}
 
 // Partly borrow from hyper-util. All rights reserved.
@@ -42,6 +43,8 @@ pub struct Pooled<K: Key, T: Poolable> {
     is_reused: bool,
     key: Option<K>,
     pool: Option<WeakPool<K, T>>,
+    queue: Option<WeakQueue<T>>,
+    max_idle: usize,
 }
 
 unsafe impl<K: Key, T: Poolable + Split> Split for Pooled<K, T> {}
@@ -94,12 +97,21 @@ impl<K: Key, I: Poolable + AsyncWriteRent> AsyncWriteRent for Pooled<K, I> {
 
 impl<T: Poolable, K: Key> Pooled<K, T> {
     #[inline]
-    pub(crate) const fn new(key: K, value: T, is_reused: bool, pool: WeakPool<K, T>) -> Self {
+    pub(crate) const fn new(
+        key: K,
+        value: T,
+        is_reused: bool,
+        pool: WeakPool<K, T>,
+        queue: Option<WeakQueue<T>>,
+        max_idle: usize,
+    ) -> Self {
         Self {
             value: Some(value),
             is_reused,
             key: Some(key),
             pool: Some(pool),
+            queue,
+            max_idle,
         }
     }
 
@@ -110,6 +122,8 @@ impl<T: Poolable, K: Key> Pooled<K, T> {
             is_reused: false,
             key: None,
             pool: None,
+            queue: None,
+            max_idle: DEFAULT_KEEPALIVE_CONNS,
         }
     }
 
@@ -154,23 +168,38 @@ impl<T: Poolable, K: Key> Drop for Pooled<K, T> {
                 return;
             }
 
+            // Add the connection back to the queue directly if the weak reference is still alive.
+            if let Some(weak_queue) = &self.queue {
+                if let Some(queue) = weak_queue.upgrade() {
+                    let len = queue.borrow().len();
+                    if len >= self.max_idle {
+                        for _ in 0..len - self.max_idle {
+                            let _ = queue.borrow_mut().pop_front();
+                        }
+                    }
+                    let idle = Idle::new(value);
+                    queue.borrow_mut().push_back(idle);
+                    return;
+                }
+            }
+
             if let Some(weak) = &self.pool {
                 if let Some(pool) = weak.upgrade() {
                     let pool = unsafe { &mut *pool.get() };
                     let key = self.key.take().expect("key is not empty");
-                    let queue = pool
-                        .idle_conns
-                        .entry(key)
-                        .or_insert(VecDeque::with_capacity(pool.max_idle));
-                    if queue.len() >= pool.max_idle {
-                        for _ in 0..queue.len() - pool.max_idle {
-                            let _ = queue.pop_front();
+                    let queue = pool.idle_conns.entry(key).or_insert(Rc::new(RefCell::new(
+                        VecDeque::with_capacity(pool.max_idle),
+                    )));
+
+                    let len = queue.borrow().len();
+                    if len >= pool.max_idle {
+                        for _ in 0..len - pool.max_idle {
+                            let _ = queue.borrow_mut().pop_front();
                         }
-                        let _ = queue.pop_front();
                     }
 
                     let idle = Idle::new(value);
-                    queue.push_back(idle);
+                    queue.borrow_mut().push_back(idle);
                 }
             }
         }
@@ -214,7 +243,7 @@ impl<IO> Idle<IO> {
 }
 
 pub(crate) struct PoolInner<K, IO> {
-    idle_conns: HashMap<K, VecDeque<Idle<IO>>>,
+    idle_conns: HashMap<K, Rc<RefCell<VecDeque<Idle<IO>>>>>,
     max_idle: usize,
     #[cfg(feature = "time")]
     idle_dur: Option<Duration>,
@@ -260,6 +289,7 @@ impl<K, IO> PoolInner<K, IO> {
     #[allow(unused)]
     fn clear_expired(&mut self, dur: Duration) {
         self.idle_conns.retain(|_, values| {
+            let mut values = values.borrow_mut();
             values.retain(|entry| !entry.expired(dur));
             !values.is_empty()
         });
@@ -335,12 +365,14 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
         #[cfg(feature = "time")]
         loop {
             let r = match inner.idle_conns.get_mut(key) {
-                Some(v) => match v.pop_front() {
+                Some(v) => match v.borrow_mut().pop_front() {
                     Some(idle) if !idle.expired_opt(inner.idle_dur) => Some(Pooled::new(
                         key.to_owned(),
                         idle.conn,
                         true,
                         Rc::downgrade(&self.shared),
+                        Some(Rc::downgrade(v)),
+                        inner.max_idle,
                     )),
                     Some(_) => {
                         continue;
@@ -370,45 +402,53 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
     #[inline]
     pub fn put(&self, key: K, conn: T) {
         let inner = unsafe { &mut *self.shared.get() };
-        let queue = inner
-            .idle_conns
-            .entry(key)
-            .or_insert(VecDeque::with_capacity(inner.max_idle));
-        if queue.len() > inner.max_idle {
-            for _ in 0..queue.len() - inner.max_idle {
-                let _ = queue.pop_front();
+        let queue =
+            inner
+                .idle_conns
+                .entry(key)
+                .or_insert(Rc::new(RefCell::new(VecDeque::with_capacity(
+                    inner.max_idle,
+                ))));
+
+        if queue.borrow().len() > inner.max_idle {
+            for _ in 0..queue.borrow().len() - inner.max_idle {
+                let _ = queue.borrow_mut().pop_front();
             }
-            let _ = queue.pop_front();
+            let _ = queue.borrow_mut().pop_front();
         }
 
         let idle = Idle::new(conn);
-        queue.push_back(idle);
+        queue.borrow_mut().push_back(idle);
     }
 
     /// Get a reference to the element and apply f with map.
     /// Mostly use by h2.
     #[inline]
     #[allow(unused)]
-    pub(crate) fn map_mut<F: FnOnce(&mut VecDeque<Idle<T>>) -> O, O>(
+    pub(crate) fn map_mut<F: FnOnce(RefMut<VecDeque<Idle<T>>>) -> O, O>(
         &self,
         key: &K,
         f: F,
     ) -> Option<O> {
         let inner = unsafe { &mut *self.shared.get() };
-        inner.idle_conns.get_mut(key).map(f)
+        inner.idle_conns.get_mut(key).map(|l| l.borrow_mut()).map(f)
     }
 
     /// Get a reference to the element and apply f with and_then.
     /// Mostly use by h2.
     #[inline]
     #[allow(unused)]
-    pub(crate) fn and_then_mut<F: FnOnce(&mut VecDeque<Idle<T>>) -> Option<O>, O>(
+    pub(crate) fn and_then_mut<F: FnOnce(RefMut<VecDeque<Idle<T>>>) -> Option<O>, O>(
         &self,
         key: &K,
         f: F,
     ) -> Option<O> {
         let inner = unsafe { &mut *self.shared.get() };
-        inner.idle_conns.get_mut(key).and_then(f)
+        inner
+            .idle_conns
+            .get_mut(key)
+            .map(|l| l.borrow_mut())
+            .and_then(f)
     }
 
     #[inline]
@@ -416,13 +456,23 @@ impl<K: Key, T: Poolable> ConnectionPool<K, T> {
         #[cfg(feature = "logging")]
         tracing::debug!("linked new connection to the pool");
 
-        Pooled::new(key, conn, false, Rc::downgrade(&self.shared))
+        let inner = unsafe { &mut *self.shared.get() };
+        let queue = inner.idle_conns.get_mut(&key).map(|v| Rc::downgrade(v));
+
+        Pooled::new(
+            key,
+            conn,
+            false,
+            Rc::downgrade(&self.shared),
+            queue,
+            inner.max_idle,
+        )
     }
 
     #[inline]
     pub fn get_idle_connection_count(&self) -> usize {
         let inner: &PoolInner<K, T> = unsafe { &*self.shared.get() };
-        inner.idle_conns.values().map(|v: &VecDeque<Idle<T>>| v.len()).sum()
+        inner.idle_conns.values().map(|v| v.borrow().len()).sum()
     }
 }
 

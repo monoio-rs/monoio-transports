@@ -420,7 +420,7 @@ impl<'a> Connector<&'a UnifiedAddr> for UnifiedConnector {
                     .tls_connector
                     .connect(sn.clone(), stream)
                     .await
-                    .map_err(|e| UnifiedError::Tls(TlsError::from(e)))?;
+                    .map_err(UnifiedError::Tls)?;
                 #[cfg(feature = "native-tls")]
                 let tls_stream = self
                     .0

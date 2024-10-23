@@ -353,7 +353,7 @@ where
     async fn connect(&self, key: K) -> Result<Self::Connection, Self::Error> {
         macro_rules! try_get {
             ($pool:expr, $key:expr) => {
-                if let Some(pooled) = $pool.and_then_mut($key, |conns| {
+                if let Some(pooled) = $pool.and_then_mut($key, |mut conns| {
                     // remove invalid conn
                     conns.retain(|idle| idle.conn.is_ready());
                     // check count

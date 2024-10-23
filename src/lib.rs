@@ -34,8 +34,9 @@
 //!
 //! ### TransportConnMetadata Trait
 //!
-//! The [`TransportConnMetadata`](crate::connectors::TransportConnMetadata) trait provides a way to retrieve additional information about
-//! a connection, such as ALPN (Application-Layer Protocol Negotiation) details:
+//! The [`TransportConnMetadata`](crate::connectors::TransportConnMetadata) trait provides a way to
+//! retrieve additional information about a connection, such as ALPN (Application-Layer Protocol
+//! Negotiation) details:
 //!
 //! ```rust
 //! pub trait TransportConnMetadata {

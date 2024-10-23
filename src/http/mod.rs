@@ -6,10 +6,10 @@
 //!
 //! # Key Components
 //!
-//! - [`HttpConnection`](HttpConnection): A unified enum representing either an HTTP/1.1 or HTTP/2 connection. It
+//! - [`HttpConnection`]: A unified enum representing either an HTTP/1.1 or HTTP/2 connection. It
 //!   provides a common interface for sending requests regardless of the underlying protocol.
 //!
-//! - [`HttpConnector`](HttpConnection): A universal connector supporting both HTTP/1.1 and HTTP/2 protocols. It can
+//! - [`HttpConnector`]: A universal connector supporting both HTTP/1.1 and HTTP/2 protocols. It can
 //!   be used with a `TlsConnector` for HTTPS connections and is specifically designed to work with
 //!   monoio's native IO traits, which are built on top of io_uring.
 //!
@@ -26,8 +26,8 @@
 //!
 //! # Connector Types and Usage
 //!
-//! The [`HttpConnector`](HttpConnector) provides various methods to create connectors for different protocols
-//! and transport layers:
+//! The [`HttpConnector`](HttpConnector) provides various methods to create connectors for different
+//! protocols and transport layers:
 //!
 //! | Connector Type | Protocol | Method | Example | Description |
 //! | --- | --- | --- | --- | --- |
@@ -42,8 +42,10 @@
 //! When the `hyper` feature flag is enabled, this module provides additional connectors
 //! that integrate with the Hyper HTTP library:
 //!
-//! - [`HyperH1Connector`](hyper::HyperH1Conenctor): An HTTP/1.1 connector compatible with Hyper's interfaces.
-//! - [`HyperH2Connector`](hyper::HyperH2Conenctor): An HTTP/2 connector compatible with Hyper's interfaces.
+//! - [`HyperH1Connector`](hyper::HyperH1Conenctor): An HTTP/1.1 connector compatible with Hyper's
+//!   interfaces.
+//! - [`HyperH2Connector`](hyper::HyperH2Conenctor): An HTTP/2 connector compatible with Hyper's
+//!   interfaces.
 mod connection;
 mod connector;
 
