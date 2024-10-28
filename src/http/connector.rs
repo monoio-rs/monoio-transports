@@ -47,6 +47,21 @@ pub struct HttpConnector<C, K, IO: AsyncWriteRent> {
     h2_pool: ConnectionPool<K, Http2Connection>,
     connecting: UnsafeCell<HashMap<K, Rc<local_sync::semaphore::Semaphore>>>,
     h2_builder: MonoioH2Builder,
+    pub read_timeout: Option<Duration>,
+}
+
+impl<C: Clone, K, IO: AsyncWriteRent> Clone for HttpConnector<C, K, IO> {
+    fn clone(&self) -> Self {
+        Self {
+            connector: self.connector.clone(),
+            h1_pool: self.h1_pool.clone(),
+            h2_pool: self.h2_pool.clone(),
+            protocol: self.protocol,
+            connecting: UnsafeCell::new(HashMap::new()),
+            read_timeout: self.read_timeout,
+            h2_builder: self.h2_builder.clone(),
+        }
+    }
 }
 
 impl<C, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<C, K, IO> {
@@ -59,7 +74,17 @@ impl<C, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<C, K, IO> {
             h2_pool: ConnectionPool::new(None),
             connecting: UnsafeCell::new(HashMap::new()),
             h2_builder: MonoioH2Builder::default(),
+            read_timeout: None,
         }
+    }
+
+    /// Sets the read timeout for the `HttpConnector`.
+    ///
+    /// This method sets the read timeout for HTTP/1.1 connections only
+    #[inline]
+    #[allow(unused)]
+    pub fn set_read_timeout(&mut self, timeout: Option<Duration>) {
+        self.read_timeout = timeout;
     }
 
     /// Sets the protocol of the `HttpConnector` to HTTP/1.1 only.
@@ -108,6 +133,41 @@ impl<C, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<C, K, IO> {
     fn is_config_auto(&self) -> bool {
         matches!(self.protocol, Protocol::Auto)
     }
+
+    /// Transfers the connection pool from an old `HttpConnector` instance to a new one.
+    ///
+    /// This function checks if the protocol and read timeout settings of the old and new
+    /// `HttpConnector` instances match. If they do, it clones the connection pools from the
+    /// old instance to the new instance.
+    ///
+    /// # Parameters
+    ///
+    /// - `old`: A reference to the old `HttpConnector` instance.
+    /// - `new`: A mutable reference to the new `HttpConnector` instance.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if the pool transfer was successful.
+    /// - `Err(&'static str)` if the pool transfer failed due to mismatched protocol or read timeout
+    ///   settings.
+    ///
+    /// # Notes
+    ///
+    /// - If the protocol or read timeout settings do not match between the old and new instances,
+    ///   the function will return early without transferring the connection pools.
+    pub fn transfer_pool(old: &Self, new: &mut Self) -> Result<(), &'static str> {
+        if old.protocol != new.protocol {
+            return Err("Protocols do not match");
+        }
+        if old.read_timeout != new.read_timeout {
+            return Err("Read timeouts do not match");
+        }
+
+        new.h1_pool = old.h1_pool.clone();
+        new.h2_pool = old.h2_pool.clone();
+
+        Ok(())
+    }
 }
 
 impl<K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TcpConnector, K, IO> {
@@ -128,6 +188,7 @@ impl<K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TcpConnector, K, IO
             h2_pool: ConnectionPool::new(None),
             connecting: UnsafeCell::new(HashMap::new()),
             h2_builder: MonoioH2Builder::default(),
+            read_timeout: None,
         }
     }
 
@@ -148,6 +209,7 @@ impl<K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TcpConnector, K, IO
             h2_pool: ConnectionPool::new(None),
             connecting: UnsafeCell::new(HashMap::new()),
             h2_builder: MonoioH2Builder::default(),
+            read_timeout: None,
         }
     }
 }
@@ -172,6 +234,7 @@ impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TlsConn
             h2_pool: ConnectionPool::new(None),
             connecting: UnsafeCell::new(HashMap::new()),
             h2_builder: MonoioH2Builder::default(),
+            read_timeout: None,
         }
     }
 
@@ -194,6 +257,7 @@ impl<C: Default, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<TlsConn
             h2_pool: ConnectionPool::new(None),
             connecting: UnsafeCell::new(HashMap::new()),
             h2_builder: MonoioH2Builder::default(),
+            read_timeout: None,
         }
     }
 }
@@ -278,7 +342,11 @@ where
             self.h2_pool.put(key, Http2Connection::new(tx.clone()));
             Ok(Http2Connection::new(tx.clone()).into())
         } else {
-            let client_codec = ClientCodec::new(transport_conn);
+            let client_codec = if let Some(timeout) = self.read_timeout {
+                ClientCodec::new_with_timeout(transport_conn, timeout)
+            } else {
+                ClientCodec::new(transport_conn)
+            };
             let http_conn = Http1Connection::new(client_codec);
             let pooled = if let Some(pool) = &self.h1_pool {
                 pool.link(key, http_conn)
