@@ -7,7 +7,7 @@ name = "monoio-transports"
 version = "0.5.3"
 
 [dependencies]
-monoio = "0.2.3"
+monoio = { version = "0.2.4", default-features = false }
 monoio-compat = "0.2.1"
 service-async = "0.2.0"
 monoio-rustls = "0.4.0"
@@ -65,3 +65,13 @@ hyper = [
 rustls-unsafe-io = ["monoio-rustls/unsafe_io"]
 native-tls = ["dep:native-tls", "monoio-native-tls"]
 logging = ["tracing", "monoio-rustls/logging"]
+monoio-default = ["monoio/default"]
+# Enable this feature to disable the iouring feature and enable tokio's poll io traits impl for TcpStream
+monoio-legacy = [
+    "monoio/legacy",
+    "monoio/tokio-compat",
+    "monoio/async-cancel",
+    "monoio/macros",
+    "monoio/bytes",
+    "monoio/utils",
+]

@@ -78,6 +78,24 @@ impl<C, K: 'static, IO: AsyncWriteRent + 'static> HttpConnector<C, K, IO> {
         }
     }
 
+    pub fn new_with_pool_options(
+        connector: C,
+        h1_pool_size: Option<usize>,
+        h1_pool_idle_interval: Option<Duration>,
+        h2_pool_size: Option<usize>,
+        h2_pool_idle_interval: Option<Duration>,
+    ) -> Self {
+        Self {
+            connector,
+            protocol: Protocol::default(),
+            h1_pool: Some(ConnectionPool::new_with_idle_interval(h1_pool_idle_interval, h1_pool_size)),
+            h2_pool: ConnectionPool::new_with_idle_interval(h2_pool_idle_interval, h2_pool_size),
+            connecting: UnsafeCell::new(HashMap::new()),
+            h2_builder: MonoioH2Builder::default(),
+            read_timeout: None,
+        }
+    }
+
     /// Sets the read timeout for the `HttpConnector`.
     ///
     /// This method sets the read timeout for HTTP/1.1 connections only
